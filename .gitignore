@@ -1,0 +1,6 @@
+.DS_Store
+*.xlsx
+*.xls
+*.csv
+!data/tase_master.csv
+workflows/

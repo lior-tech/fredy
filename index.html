@@ -1,0 +1,730 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>התיק שלי</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📈</text></svg>">
+<style>
+:root{
+  --bg:#f4f6f8; --card:#ffffff; --ink:#12181f; --ink2:#3d4a58; --line:#c9d3dd;
+  --green:#0a6b3d; --greenbg:#e3f5ea; --red:#a01523; --redbg:#fdeaec;
+  --amber:#8a5a00; --amberbg:#fdf2dc; --blue:#12507e; --bluebg:#e6f0f9;
+  --step:0px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{direction:rtl;-webkit-text-size-adjust:100%}
+body{
+  background:var(--bg); color:var(--ink);
+  font-family:'Heebo','Segoe UI',system-ui,'Noto Sans Hebrew','Arial Hebrew','Alef','Assistant',Arial,Tahoma,sans-serif;
+  font-size:calc(22px + var(--step)); line-height:1.65; font-weight:500;
+  text-align:start; overflow-x:hidden; padding-bottom:60px;
+}
+.num,.tkr{direction:ltr;unicode-bidi:isolate;font-variant-numeric:tabular-nums lining-nums}
+.wrap{max-width:920px;margin:0 auto;padding:0 16px}
+
+/* header */
+header{background:#12283d;color:#fff;padding:18px 0 14px}
+.hrow{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+h1{font-size:1.5em;font-weight:800;letter-spacing:0}
+.sizer{display:flex;gap:8px;align-items:center}
+.sizer button{
+  background:#fff;color:#12283d;border:2px solid #fff;border-radius:12px;
+  min-width:64px;min-height:56px;font-size:1.1em;font-weight:800;cursor:pointer;
+  font-family:inherit;
+}
+.sizer button:active{transform:scale(.96)}
+.sizer span{font-size:.7em;opacity:.85}
+
+/* status banner */
+.banner{padding:14px 16px;border-radius:14px;margin:16px 0;font-weight:700;border:3px solid}
+.b-ok{background:var(--bluebg);border-color:#9dc2e0;color:var(--blue)}
+.b-warn{background:var(--amberbg);border-color:#e0b968;color:var(--amber)}
+.b-bad{background:var(--redbg);border-color:#e0949c;color:var(--red)}
+
+/* tabs */
+nav.tabs{display:flex;gap:10px;margin:18px 0 8px;flex-wrap:wrap}
+nav.tabs button{
+  flex:1 1 auto;min-height:72px;min-width:150px;border-radius:16px;cursor:pointer;
+  border:3px solid var(--line);background:#fff;color:var(--ink2);
+  font-size:1.02em;font-weight:800;font-family:inherit;padding:8px 14px;
+}
+nav.tabs button[aria-selected="true"]{background:#12283d;color:#fff;border-color:#12283d}
+
+/* upload */
+.upload{
+  background:#fff;border:4px dashed #9ab0c4;border-radius:20px;
+  padding:26px 20px;text-align:center;margin:16px 0;
+}
+.bigbtn{
+  display:inline-block;background:#0a6b3d;color:#fff;border:none;border-radius:18px;
+  padding:22px 34px;font-size:1.15em;font-weight:800;cursor:pointer;font-family:inherit;
+  min-height:76px;width:100%;max-width:560px;
+}
+.bigbtn:active{transform:scale(.985)}
+.bigbtn.sec{background:#12507e}
+.hint{color:var(--ink2);font-size:.85em;margin-top:12px;line-height:1.5}
+
+/* summary */
+.sum{background:#fff;border:3px solid var(--line);border-radius:20px;padding:20px;margin:16px 0}
+.sumtop{display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px}
+.sumlbl{color:var(--ink2);font-size:.8em;font-weight:700}
+.sumval{font-size:1.85em;font-weight:800}
+.pill{display:inline-block;padding:8px 16px;border-radius:999px;font-weight:800;font-size:.82em;margin-top:10px}
+
+/* cards */
+.card{background:var(--card);border:3px solid var(--line);border-radius:20px;padding:20px;margin:14px 0}
+.card.g{border-color:#7fc09c}.card.r{border-color:#e0949c}.card.a{border-color:#e0b968}
+.cardhead{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap}
+.nm{font-size:1.12em;font-weight:800;line-height:1.35}
+.sub{color:var(--ink2);font-size:.76em;font-weight:600;margin-top:2px}
+.badge{padding:10px 16px;border-radius:14px;font-weight:800;font-size:.8em;white-space:nowrap;border:2px solid}
+.bg-g{background:var(--greenbg);color:var(--green);border-color:#7fc09c}
+.bg-r{background:var(--redbg);color:var(--red);border-color:#e0949c}
+.bg-a{background:var(--amberbg);color:var(--amber);border-color:#e0b968}
+.bg-n{background:#eef1f4;color:var(--ink2);border-color:var(--line)}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-top:16px}
+.cell{background:#f7f9fb;border-radius:14px;padding:12px 14px}
+.cell .k{color:var(--ink2);font-size:.72em;font-weight:700}
+.cell .v{font-size:1.05em;font-weight:800;margin-top:2px}
+.pos{color:var(--green)}.neg{color:var(--red)}
+
+/* range bar */
+.range{margin-top:18px}
+.rlabels{display:flex;justify-content:space-between;font-size:.74em;color:var(--ink2);font-weight:700}
+.rbar{position:relative;height:26px;background:linear-gradient(90deg,#e3f5ea,#fdf2dc,#fdeaec);border-radius:999px;margin:8px 0;border:2px solid var(--line)}
+.rdot{position:absolute;top:-6px;width:6px;height:32px;background:#12283d;border-radius:3px}
+.note{margin-top:14px;font-size:.86em;line-height:1.55}
+details{margin-top:14px}
+summary{cursor:pointer;font-weight:800;color:var(--blue);font-size:.86em;padding:12px 0;min-height:48px;display:flex;align-items:center}
+details .body{font-size:.84em;color:var(--ink2);line-height:1.6;padding-top:6px}
+
+/* search */
+.search{display:flex;gap:10px;flex-wrap:wrap;margin:16px 0}
+.search input{
+  flex:1 1 260px;min-height:76px;border:3px solid var(--line);border-radius:16px;
+  padding:0 18px;font-size:1em;font-family:inherit;font-weight:600;background:#fff;color:var(--ink);
+}
+.search input:focus{outline:4px solid #9dc2e0;border-color:var(--blue)}
+.search button{min-height:76px;padding:0 34px;border:none;border-radius:16px;background:#12507e;color:#fff;font-size:1.05em;font-weight:800;cursor:pointer;font-family:inherit}
+.sugg{background:#fff;border:3px solid var(--line);border-radius:16px;overflow:hidden}
+.sugg button{display:block;width:100%;text-align:start;padding:16px 18px;border:none;border-bottom:1px solid var(--line);background:#fff;font-size:.9em;font-family:inherit;cursor:pointer;color:var(--ink);min-height:60px}
+.sugg button:last-child{border-bottom:none}
+
+.foot{margin:30px 0 10px;padding:18px;background:#eef1f4;border-radius:16px;color:var(--ink2);font-size:.72em;line-height:1.6;border:2px solid var(--line)}
+.hidden{display:none !important}
+.center{text-align:center}
+.spin{display:inline-block;width:20px;height:20px;border:3px solid var(--line);border-top-color:var(--blue);border-radius:50%;animation:sp .8s linear infinite;vertical-align:middle}
+@keyframes sp{to{transform:rotate(360deg)}}
+@media print{header,nav.tabs,.upload,.sizer,.search{display:none}body{background:#fff;font-size:12pt}.card{page-break-inside:avoid}}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap hrow">
+    <div>
+      <h1>התיק שלי</h1>
+      <div style="font-size:.72em;opacity:.85;font-weight:600" id="greet">שלום פרדי</div>
+    </div>
+    <div class="sizer">
+      <span>גודל</span>
+      <button id="tMinus" aria-label="הקטן טקסט">א־</button>
+      <button id="tPlus" aria-label="הגדל טקסט">א+</button>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+  <div id="status"></div>
+
+  <nav class="tabs" role="tablist">
+    <button id="tab1" role="tab" aria-selected="true" aria-controls="p1">התיק שלי</button>
+    <button id="tab2" role="tab" aria-selected="false" aria-controls="p2">המלצות היום</button>
+    <button id="tab3" role="tab" aria-selected="false" aria-controls="p3">בדיקת מניה</button>
+  </nav>
+
+  <!-- ============ PORTFOLIO ============ -->
+  <section id="p1" role="tabpanel">
+    <div class="upload">
+      <div style="font-size:1.05em;font-weight:800;margin-bottom:6px">עדכון שבועי</div>
+      <div class="hint" style="margin-bottom:16px">
+        הורד את קובץ האחזקות מהבנק, ואז לחץ כאן.
+      </div>
+      <button class="bigbtn" id="pick">📂 טען את הקובץ מהבנק</button>
+      <input type="file" id="file" class="hidden"
+        accept=".xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv">
+      <div class="hint" id="lastup"></div>
+      <details style="max-width:560px;margin:14px auto 0;text-align:start">
+        <summary>איך מורידים את הקובץ מהבנק?</summary>
+        <div class="body">
+          1. היכנס לאתר בנק דיסקונט.<br>
+          2. לחץ על <b>עולם שוק ההון</b>.<br>
+          3. לחץ על <b>התיק שלי</b>.<br>
+          4. למעלה יש כפתור <b>הדפסה ויצוא</b> — לחץ עליו.<br>
+          5. בחר <b>ייצוא לאקסל</b>.<br>
+          6. חזור לכאן ולחץ על הכפתור הירוק.
+        </div>
+      </details>
+    </div>
+
+    <div id="summary"></div>
+    <div id="holdings"></div>
+  </section>
+
+  <!-- ============ IDEAS ============ -->
+  <section id="p2" role="tabpanel" class="hidden">
+    <div id="ideas"></div>
+  </section>
+
+  <!-- ============ CHECK A STOCK ============ -->
+  <section id="p3" role="tabpanel" class="hidden">
+    <div class="search">
+      <input id="q" placeholder="הקלד שם מניה או סימבול, לדוגמה AAPL או טבע" autocomplete="off">
+      <button id="go">בדוק</button>
+    </div>
+    <div id="sugg"></div>
+    <div id="result"></div>
+  </section>
+
+  <div class="foot">
+    המידע בעמוד זה הוא מידע כללי בלבד ואינו ייעוץ השקעות אישי. הנתונים מגיעים ממקורות
+    חיצוניים ועשויים להיות שגויים או לא מעודכנים. אין לראות באמור המלצה לקנות או למכור
+    נייר ערך כלשהו. החלטות השקעה כדאי לקבל עם יועץ מורשה.
+  </div>
+</div>
+
+<script src="vendor/xlsx.full.min.js"></script>
+<script>
+"use strict";
+
+/* ============================================================
+   Formatting helpers. Every number goes through Intl so the
+   invisible bidi marks are correct and the minus sign does not
+   jump to the wrong side in an RTL paragraph.
+   ============================================================ */
+const nfILS = new Intl.NumberFormat('he-IL',{style:'currency',currency:'ILS',maximumFractionDigits:0});
+const nfILS2= new Intl.NumberFormat('he-IL',{style:'currency',currency:'ILS',minimumFractionDigits:2,maximumFractionDigits:2});
+const nfUSD = new Intl.NumberFormat('he-IL',{style:'currency',currency:'USD',minimumFractionDigits:2,maximumFractionDigits:2});
+const nfPct = new Intl.NumberFormat('he-IL',{style:'percent',minimumFractionDigits:1,maximumFractionDigits:1});
+const nfNum = new Intl.NumberFormat('he-IL',{maximumFractionDigits:2});
+const nfInt = new Intl.NumberFormat('he-IL',{maximumFractionDigits:0});
+const dLong = new Intl.DateTimeFormat('he-IL',{dateStyle:'long'});
+const dShort= new Intl.DateTimeFormat('he-IL',{day:'2-digit',month:'2-digit',year:'numeric'});
+
+const money=(v,cur)=> cur==='USD' ? nfUSD.format(v) : (Math.abs(v)>=1000?nfILS.format(v):nfILS2.format(v));
+const pct  =(v)=> nfPct.format(v/100);
+const esc  =(s)=> String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+/* ============================================================
+   Text size control
+   ============================================================ */
+(function(){
+  let step = parseInt(localStorage.getItem('step')||'0',10);
+  const apply=()=>{document.documentElement.style.setProperty('--step',step+'px');localStorage.setItem('step',step);};
+  document.getElementById('tPlus').onclick =()=>{step=Math.min(step+3,14);apply();};
+  document.getElementById('tMinus').onclick=()=>{step=Math.max(step-3,-4);apply();};
+  apply();
+})();
+
+/* ============================================================
+   Tabs
+   ============================================================ */
+(function(){
+  const tabs=[['tab1','p1'],['tab2','p2'],['tab3','p3']];
+  tabs.forEach(([t,p])=>{
+    document.getElementById(t).onclick=()=>{
+      tabs.forEach(([t2,p2])=>{
+        document.getElementById(t2).setAttribute('aria-selected', t2===t);
+        document.getElementById(p2).classList.toggle('hidden', p2!==p);
+      });
+      window.scrollTo({top:0,behavior:'smooth'});
+    };
+  });
+})();
+
+/* ============================================================
+   Storage. IndexedDB holds: the parsed portfolio, the raw file
+   bytes of each upload, and an accumulating price history keyed
+   by security number. The raw bytes matter because a future
+   parser fix can re-derive everything from them.
+   ============================================================ */
+const DB={
+  db:null,
+  open(){
+    return new Promise((res,rej)=>{
+      const r=indexedDB.open('fredy',1);
+      r.onupgradeneeded=e=>{
+        const d=e.target.result;
+        if(!d.objectStoreNames.contains('kv'))      d.createObjectStore('kv');
+        if(!d.objectStoreNames.contains('uploads')) d.createObjectStore('uploads',{keyPath:'id',autoIncrement:true});
+      };
+      r.onsuccess=e=>{this.db=e.target.result;res();};
+      r.onerror=e=>rej(e);
+    });
+  },
+  get(k){return new Promise(r=>{const t=this.db.transaction('kv').objectStore('kv').get(k);t.onsuccess=()=>r(t.result);t.onerror=()=>r(null);});},
+  set(k,v){return new Promise(r=>{const t=this.db.transaction('kv','readwrite').objectStore('kv').put(v,k);t.onsuccess=()=>r(true);t.onerror=()=>r(false);});},
+  addUpload(rec){return new Promise(r=>{const t=this.db.transaction('uploads','readwrite').objectStore('uploads').add(rec);t.onsuccess=()=>r(true);t.onerror=()=>r(false);});},
+  allUploads(){return new Promise(r=>{const t=this.db.transaction('uploads').objectStore('uploads').getAll();t.onsuccess=()=>r(t.result||[]);t.onerror=()=>r([]);});}
+};
+
+/* ============================================================
+   TASE master: security number -> symbol -> stockanalysis id
+   ============================================================ */
+let TASE=[], TASEbyNo=new Map();
+async function loadTase(){
+  try{
+    const txt=await (await fetch('data/tase_master.csv')).text();
+    const lines=txt.split(/\r?\n/); const head=lines[0].split(',');
+    const ix=n=>head.indexOf(n);
+    const iNo=ix('security_no'),iSym=ix('symbol'),iHe=ix('name_he'),iEn=ix('name_en'),iSub=ix('sub_type');
+    for(let i=1;i<lines.length;i++){
+      if(!lines[i])continue;
+      const c=lines[i].split(',');
+      if(c.length<head.length)continue;
+      const o={no:c[iNo],sym:c[iSym],he:c[iHe],en:c[iEn],sub:c[iSub]};
+      TASE.push(o); TASEbyNo.set(String(o.no),o);
+    }
+  }catch(e){ console.warn('tase master failed',e); }
+}
+
+/* which instruments can actually be priced */
+const PRICEABLE=new Set(['Shares','Shares TASE UP','ETF Fund - Equity','ETF - Bonds','Foreign ETF - Equity','Foreign ETF - Bonds']);
+
+/* ============================================================
+   Market data. stockanalysis.com, no key, CORS open.
+   TASE prices come back in agorot.
+   ============================================================ */
+const pxCache=new Map();
+async function quote(id){
+  if(pxCache.has(id))return pxCache.get(id);
+  try{
+    const r=await fetch('https://stockanalysis.com/api/quotes/'+id);
+    const j=await r.json();
+    if(j&&j.status===200&&j.data&&typeof j.data.p==='number'){pxCache.set(id,j.data);return j.data;}
+  }catch(e){}
+  pxCache.set(id,null); return null;
+}
+async function history(id,range){
+  try{
+    const r=await fetch('https://stockanalysis.com/api/symbol/'+id+'/history?range='+range);
+    const j=await r.json();
+    if(j&&j.status===200&&Array.isArray(j.data))return j.data;
+  }catch(e){}
+  return null;
+}
+
+/* ============================================================
+   Parsing the Bank Discount export.
+   Header row is never row 1. Find it by content.
+   ============================================================ */
+const COLS={
+  name : ['שם נייר','שם הנייר','security name'],
+  id   : ['מספר נייר/סימבול','מספר נייר','מס\' נייר','סימבול','security number / symbol','security number'],
+  qty  : ['כמות','quantity'],
+  value: ['שווי','value'],
+  last : ['שער אחרון','last rate','שער'],
+  cost : ['שער קניה משוקלל','weighted','שער קניה'],
+  chg  : ['% שינוי משער קניה משוקלל'],
+  type : ['סוג נייר','security type'],
+  share: ['אחוז נייר מהתיק']
+};
+const norm=s=>String(s==null?'':s).replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim().toLowerCase();
+function matchCol(header){
+  const map={};
+  header.forEach((h,i)=>{
+    const n=norm(h); if(!n)return;
+    for(const key in COLS){
+      if(map[key]!==undefined)continue;
+      if(COLS[key].some(c=>n.startsWith(norm(c)))){map[key]=i;return;}
+    }
+  });
+  return map;
+}
+function findHeaderRow(rows){
+  for(let i=0;i<Math.min(rows.length,40);i++){
+    const r=(rows[i]||[]).map(norm);
+    const hasName=r.some(c=>c.startsWith('שם נייר')||c.startsWith('security name'));
+    const hasQty =r.some(c=>c==='כמות'||c.startsWith('quantity'));
+    if(hasName&&hasQty)return i;
+  }
+  return -1;
+}
+function parseWorkbook(buf){
+  const wb=XLSX.read(buf,{type:'array',cellDates:false});
+  const ws=wb.Sheets[wb.SheetNames[0]];
+  const rows=XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:null});
+  const hi=findHeaderRow(rows);
+  if(hi<0) return {error:'headers'};
+  const map=matchCol(rows[hi]);
+  if(map.name===undefined||map.qty===undefined) return {error:'headers'};
+
+  // account number usually sits in row 2
+  let account=null;
+  for(let i=0;i<hi;i++){
+    const line=(rows[i]||[]).map(c=>String(c==null?'':c)).join(' ');
+    const m=line.match(/חשבון\s*:?\s*([0-9\-\/]+)/);
+    if(m){account=m[1];break;}
+  }
+
+  const out=[];
+  for(let i=hi+1;i<rows.length;i++){
+    const r=rows[i]; if(!r)continue;
+    const nm=r[map.name];
+    if(nm==null||String(nm).trim()==='')continue;
+    if(String(nm).trim().startsWith('סה"כ')||norm(nm)==='total')continue;
+    const num=j=>{const v=(j===undefined?null:r[j]); if(v==null||v==='')return null;
+      const n=typeof v==='number'?v:parseFloat(String(v).replace(/[^\d.\-]/g,'')); return isNaN(n)?null:n;};
+    const rec={
+      name : String(nm).trim(),
+      rawId: map.id!==undefined&&r[map.id]!=null?String(r[map.id]).trim():'',
+      qty  : num(map.qty),
+      value: num(map.value),
+      last : num(map.last),
+      cost : num(map.cost),
+      type : map.type!==undefined&&r[map.type]!=null?String(r[map.type]).trim():'',
+      share: num(map.share)
+    };
+    if(rec.qty==null&&rec.value==null)continue;
+    out.push(rec);
+  }
+  if(!out.length)return{error:'norows'};
+  return {rows:out,account};
+}
+
+/* map a bank row to a stockanalysis id */
+function resolve(rec){
+  const raw=(rec.rawId||'').trim();
+  // pure digits -> TASE security number
+  const digits=raw.replace(/\D/g,'');
+  if(digits && TASEbyNo.has(digits)){
+    const t=TASEbyNo.get(digits);
+    return {market:'TASE',sym:t.sym,id:'a/TLV-'+t.sym,meta:t,priceable:PRICEABLE.has(t.sub),secNo:digits};
+  }
+  if(digits && digits.length>=5){
+    // a TASE number we do not have (mutual funds are not in the file)
+    return {market:'TASE',sym:null,id:null,meta:null,priceable:false,secNo:digits};
+  }
+  // looks like a US ticker
+  if(/^[A-Za-z.\-]{1,6}$/.test(raw)) return {market:'US',sym:raw.toUpperCase(),id:'s/'+raw.toLowerCase(),meta:null,priceable:true,secNo:null};
+  return {market:'?',sym:null,id:null,meta:null,priceable:false,secNo:digits||null};
+}
+
+/* ============================================================
+   Verdict. Rule based and stated openly. No prediction.
+   ============================================================ */
+function verdict(price,lo,hi){
+  if(lo==null||hi==null||hi<=lo)return null;
+  const pos=(price-lo)/(hi-lo);
+  if(pos>=0.85) return {k:'r',cls:'r',bg:'bg-r',txt:'לשקול למכור',
+    why:'המחיר קרוב מאוד לשיא של התקופה. זה לא אומר שהוא ימשיך לרדת, אבל זו נקודה שכדאי לשים לב אליה.'};
+  if(pos<=0.20) return {k:'g',cls:'g',bg:'bg-g',txt:'לשקול להוסיף',
+    why:'המחיר קרוב לתחתית של התקופה. זה לא אומר שהוא יעלה, אבל הוא זול יחסית לעצמו.'};
+  return {k:'a',cls:'a',bg:'bg-a',txt:'להחזיק ולעקוב',
+    why:'המחיר נמצא באמצע הטווח של התקופה. אין כאן סיבה מיוחדת לפעולה.'};
+}
+
+/* ============================================================
+   Rendering a single security card
+   ============================================================ */
+function rangeBar(price,lo,hi){
+  const p=Math.max(0,Math.min(1,(price-lo)/(hi-lo)));
+  return `<div class="range">
+    <div class="rlabels"><span>הרצפה <span class="num">${esc(nfNum.format(lo))}</span></span>
+    <span>התקרה <span class="num">${esc(nfNum.format(hi))}</span></span></div>
+    <div class="rbar"><div class="rdot" style="right:calc(${(p*100).toFixed(1)}% - 3px)"></div></div>
+    <div class="center" style="font-size:.78em;color:var(--ink2);font-weight:700">המחיר היום: <span class="num">${esc(nfNum.format(price))}</span></div>
+  </div>`;
+}
+
+function cardHTML(o){
+  // o: {name, sub, qty, valueILS, costRate, lastRate, q(quote), lo, hi, cur, priceable, reason}
+  const v=o.v||null;
+  const cls=v?v.cls:'';
+  const badge=v?`<span class="badge ${v.bg}">${esc(v.txt)}</span>`
+                :`<span class="badge bg-n">אין ניתוח מחיר</span>`;
+  let cells='';
+  if(o.qty!=null)      cells+=`<div class="cell"><div class="k">כמות</div><div class="v num">${esc(nfNum.format(o.qty))}</div></div>`;
+  if(o.valueILS!=null) cells+=`<div class="cell"><div class="k">שווי</div><div class="v num">${esc(money(o.valueILS,'ILS'))}</div></div>`;
+  if(o.plPct!=null){
+    const s=o.plPct>=0?'pos':'neg', ar=o.plPct>=0?'▲':'▼';
+    cells+=`<div class="cell"><div class="k">רווח או הפסד</div><div class="v ${s} num">${ar} ${esc(pct(Math.abs(o.plPct)))}</div></div>`;
+  }
+  if(o.plILS!=null){
+    const s=o.plILS>=0?'pos':'neg';
+    cells+=`<div class="cell"><div class="k">בשקלים</div><div class="v ${s} num">${esc(money(Math.abs(o.plILS),'ILS'))}</div></div>`;
+  }
+  if(o.priceNow!=null) cells+=`<div class="cell"><div class="k">מחיר היום</div><div class="v num">${esc(nfNum.format(o.priceNow))}${o.cur==='USD'?' $':' אג׳'}</div></div>`;
+
+  let extra='';
+  if(o.lo!=null&&o.hi!=null&&o.priceNow!=null) extra+=rangeBar(o.priceNow,o.lo,o.hi);
+  if(o.targets) extra+=`<div class="grid">
+      <div class="cell"><div class="k">מחיר יעד למכירה</div><div class="v num">${esc(nfNum.format(o.targets.sell))}</div></div>
+      <div class="cell"><div class="k">מחיר טוב לקנייה נוספת</div><div class="v num">${esc(nfNum.format(o.targets.buy))}</div></div>
+    </div>`;
+  if(o.yields) extra+=`<div class="grid">
+      ${o.yields.map(y=>`<div class="cell"><div class="k">${esc(y[0])}</div><div class="v num ${y[1]>=0?'pos':'neg'}">${esc(pct(y[1]))}</div></div>`).join('')}
+    </div>`;
+
+  const note=v?`<div class="note">${esc(v.why)}</div>`
+              :`<div class="note">${esc(o.reason||'ניתוח מחירים לא זמין לנייר הזה.')}</div>`;
+
+  return `<div class="card ${cls}">
+    <div class="cardhead">
+      <div><div class="nm">${esc(o.name)}</div><div class="sub">${esc(o.sub||'')}</div></div>
+      ${badge}
+    </div>
+    <div class="grid">${cells}</div>
+    ${extra}
+    ${note}
+    <details><summary>פרטים נוספים</summary><div class="body">${o.details||''}</div></details>
+  </div>`;
+}
+
+/* ============================================================
+   Build and render the portfolio
+   ============================================================ */
+let PORT=null;
+
+async function renderPortfolio(){
+  const H=document.getElementById('holdings'), S=document.getElementById('summary');
+  if(!PORT||!PORT.rows||!PORT.rows.length){
+    S.innerHTML=''; H.innerHTML=`<div class="card center"><div class="nm">עדיין לא נטען קובץ</div>
+      <div class="note">לחץ על הכפתור הירוק למעלה כדי לטעון את קובץ האחזקות מהבנק.</div></div>`;
+    return;
+  }
+  const rows=PORT.rows;
+  let total=0, cost=0;
+  rows.forEach(r=>{
+    if(r.value!=null)total+=r.value;
+    if(r.value!=null&&r.cost!=null&&r.last!=null&&r.last>0) cost+=r.value*(r.cost/r.last);
+  });
+  const pl = cost>0 ? total-cost : null;
+  const plPct = cost>0 ? (total/cost-1)*100 : null;
+
+  S.innerHTML=`<div class="sum">
+    <div class="sumtop"><div class="sumlbl">שווי התיק</div>
+      <div class="sumlbl">${esc(rows.length)} ניירות ערך</div></div>
+    <div class="sumval num">${esc(money(total,'ILS'))}</div>
+    ${pl!=null?`<div class="pill ${pl>=0?'bg-g':'bg-r'}">${pl>=0?'▲ ברווח':'▼ בהפסד'} ${esc(money(Math.abs(pl),'ILS'))} (${esc(pct(Math.abs(plPct)))})</div>`:''}
+    <div class="hint" style="margin-top:12px">הנתונים מהקובץ של הבנק מתאריך <b>${esc(PORT.fileDateTxt||'לא ידוע')}</b>. סכומים במטבע חוץ מומרו לשקלים לפי המרה של הבנק.</div>
+  </div>`;
+
+  H.innerHTML=`<div class="center" style="padding:20px"><span class="spin"></span> טוען מחירים…</div>`;
+
+  const cards=[];
+  for(const r of rows){
+    const res=resolve(r);
+    const o={name:r.name, qty:r.qty, valueILS:r.value, cur:'ILS'};
+    o.sub=[res.sym||res.secNo||'', r.type||''].filter(Boolean).join(' · ');
+
+    // profit/loss from the bank file alone (Tier 1) — works for everything
+    if(r.cost!=null&&r.last!=null&&r.cost>0){
+      o.plPct=(r.last/r.cost-1)*100;
+      if(r.value!=null) o.plILS=r.value-(r.value*(r.cost/r.last));
+    }
+
+    let details=`<b>מקור הנתונים:</b> קובץ האחזקות של בנק דיסקונט`
+      +(PORT.fileDateTxt?` מתאריך ${esc(PORT.fileDateTxt)}`:'')+`.`;
+
+    if(res.priceable&&res.id){
+      const q=await quote(res.id);
+      if(q){
+        o.priceNow=q.p; o.cur=(res.market==='US')?'USD':'ILS';
+        o.lo=q.l52; o.hi=q.h52;
+        o.v=verdict(q.p,q.l52,q.h52);
+        if(o.lo!=null&&o.hi!=null){
+          o.targets={sell:o.hi,buy:o.lo+(o.hi-o.lo)*0.2};
+        }
+        details+=`<br><b>מחיר שוק:</b> ${esc(q.u||'')} (${esc(q.ex||'')}).`
+          +`<br><b>הכלל:</b> הרצפה והתקרה הן המחיר הנמוך והגבוה ביותר ב־52 השבועות האחרונים.`
+          +` אם המחיר בשליש התחתון של הטווח — לשקול להוסיף. בשישית העליונה — לשקול למכור. באמצע — להחזיק.`;
+      }else{
+        o.reason='לא הצלחנו למצוא מחיר עדכני לנייר הזה כרגע.';
+      }
+    }else{
+      const isFund = !res.meta && res.secNo;
+      o.reason = isFund
+        ? 'זו כנראה קרן נאמנות. קרנות לא נסחרות כמו מניה, ולכן אין להן שער גבוה ונמוך יומי.'
+        : 'ניתוח מחירים לא זמין לנייר הזה. אגרות חוב וקרנות לא נסחרות כמו מניות.';
+      details+=`<br>הנתונים המוצגים הם של הבנק בלבד, ללא מחיר שוק חי.`;
+    }
+    o.details=details;
+    cards.push({o,rank:o.v?({r:0,a:1,g:2})[o.v.k]:3});
+  }
+  cards.sort((a,b)=>a.rank-b.rank);
+  H.innerHTML=cards.map(c=>cardHTML(c.o)).join('');
+}
+
+/* ============================================================
+   Upload handling
+   ============================================================ */
+function bannerHTML(kind,txt){return `<div class="banner ${kind}">${txt}</div>`;}
+
+async function handleFile(file){
+  const S=document.getElementById('status');
+  S.innerHTML=`<div class="banner b-ok"><span class="spin"></span> קורא את הקובץ…</div>`;
+  try{
+    const buf=new Uint8Array(await file.arrayBuffer());
+    if(!buf.length){S.innerHTML=bannerHTML('b-bad','ההורדה לא הסתיימה. נסה להוריד את הקובץ שוב.');return;}
+    // magic bytes
+    const sig=String.fromCharCode(...buf.slice(0,4));
+    if(sig.startsWith('%PDF')){S.innerHTML=bannerHTML('b-bad','זה קובץ PDF. צריך את הקובץ של האקסל — בבנק, בחר <b>ייצוא לאקסל</b> ולא PDF.');return;}
+
+    const parsed=parseWorkbook(buf);
+    if(parsed.error==='headers'){
+      S.innerHTML=bannerHTML('b-bad','זה לא נראה כמו קובץ האחזקות. בבנק: <b>עולם שוק ההון</b> ← <b>התיק שלי</b> ← <b>הדפסה ויצוא</b> ← <b>ייצוא לאקסל</b>.');
+      return;
+    }
+    if(parsed.error==='norows'){S.innerHTML=bannerHTML('b-bad','לא נמצאו ניירות ערך בקובץ. ייתכן שנבחר המסך הלא נכון בבנק.');return;}
+
+    // date from the filename: <title>_HHmm_DDMMYYYY.xlsx
+    let fileDate=null,fileDateTxt=null;
+    const m=file.name.match(/_(\d{2})(\d{2})_(\d{2})(\d{2})(\d{4})/);
+    if(m){ fileDate=new Date(+m[5],+m[4]-1,+m[3],+m[1],+m[2]); fileDateTxt=dLong.format(fileDate); }
+    else { fileDateTxt=dLong.format(new Date(file.lastModified||Date.now())); }
+
+    const prev=await DB.get('portfolio');
+    const same = prev && prev.rows && prev.rows.length===parsed.rows.length &&
+                 JSON.stringify(prev.rows)===JSON.stringify(parsed.rows);
+
+    PORT={rows:parsed.rows,account:parsed.account,fileDateTxt,fileName:file.name,loadedAt:Date.now()};
+    await DB.set('portfolio',PORT);
+    await DB.addUpload({name:file.name,at:Date.now(),bytes:buf,rows:parsed.rows});
+
+    // accumulate price history for everything, including what no API covers
+    const hist=(await DB.get('pricehist'))||{};
+    const key=fileDateTxt||new Date().toISOString().slice(0,10);
+    parsed.rows.forEach(r=>{
+      const id=(r.rawId||r.name).trim(); if(!id)return;
+      hist[id]=hist[id]||{};
+      if(r.last!=null) hist[id][key]=r.last;
+    });
+    await DB.set('pricehist',hist);
+
+    S.innerHTML = same
+      ? bannerHTML('b-warn','זה אותו קובץ כמו בפעם הקודמת. הנתונים מתאריך <b>'+esc(fileDateTxt)+'</b>.')
+      : bannerHTML('b-ok','✓ הקובץ נטען. הנתונים מתאריך <b>'+esc(fileDateTxt)+'</b>.');
+    document.getElementById('lastup').innerHTML='הקובץ האחרון: <b>'+esc(fileDateTxt)+'</b>';
+    await renderPortfolio();
+  }catch(err){
+    console.error(err);
+    S.innerHTML=bannerHTML('b-bad','לא הצלחנו לקרוא את הקובץ. ודא שזה קובץ האקסל שהורדת מהבנק.');
+  }
+}
+
+document.getElementById('pick').onclick=async()=>{
+  // File System Access API where available: opens straight in Downloads
+  if(window.showOpenFilePicker){
+    try{
+      const [h]=await window.showOpenFilePicker({
+        startIn:'downloads', id:'bankfile', multiple:false,
+        types:[{description:'קובץ מהבנק',accept:{'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':['.xlsx'],'application/vnd.ms-excel':['.xls'],'text/csv':['.csv']}}]
+      });
+      return handleFile(await h.getFile());
+    }catch(e){ if(e&&e.name==='AbortError')return; }
+  }
+  document.getElementById('file').click();
+};
+document.getElementById('file').onchange=e=>{ if(e.target.files[0]) handleFile(e.target.files[0]); };
+
+/* drag and drop, and paste, as free extras — never taught */
+document.addEventListener('dragover',e=>{e.preventDefault();});
+document.addEventListener('drop',e=>{e.preventDefault(); if(e.dataTransfer.files[0])handleFile(e.dataTransfer.files[0]);});
+document.addEventListener('paste',e=>{ const f=e.clipboardData&&e.clipboardData.files&&e.clipboardData.files[0]; if(f)handleFile(f); });
+
+/* ============================================================
+   Ideas
+   ============================================================ */
+function staleState(ts){
+  const h=(Date.now()-ts)/36e5;
+  if(h<26)return'fresh'; if(h<72)return'stale'; return'dead';
+}
+async function renderIdeas(){
+  const E=document.getElementById('ideas');
+  let j=null;
+  try{ const r=await fetch('data/ideas.json',{cache:'no-store'}); if(r.ok) j=await r.json(); }catch(e){}
+  if(!j||!Array.isArray(j.ideas)||!j.ideas.length){
+    E.innerHTML=`<div class="card center"><div class="nm">אין המלצות כרגע</div>
+      <div class="note">הרשימה מתעדכנת אוטומטית כל בוקר. אם ההודעה הזו נשארת כמה ימים, כדאי לספר לליאור.</div></div>`;
+    return;
+  }
+  const ts=Date.parse(j.generated_at||'')||0;
+  const st=staleState(ts);
+  if(st==='dead'){
+    E.innerHTML=bannerHTML('b-bad','אין נתונים עדכניים כרגע. ההמלצות האחרונות הן מתאריך <b>'+esc(dLong.format(new Date(ts)))+'</b> ולכן אינן מוצגות.')
+      +`<div class="card center"><div class="note">כדאי לספר לליאור שהעמוד לא מתעדכן.</div></div>`;
+    return;
+  }
+  const head = st==='stale'
+    ? bannerHTML('b-warn','ההמלצות האלה מתאריך <b>'+esc(dLong.format(new Date(ts)))+'</b> ולא התעדכנו היום. ייתכן שהמחירים השתנו.')
+    : bannerHTML('b-ok','עודכן ב־'+esc(dLong.format(new Date(ts))));
+  E.innerHTML=head+j.ideas.map(i=>`
+    <div class="card">
+      <div class="cardhead">
+        <div><div class="nm">${esc(i.name_he||i.name||i.symbol)}</div>
+          <div class="sub tkr">${esc(i.symbol||'')} · ${esc(i.market==='TASE'?'תל אביב':'נאסד"ק')}</div></div>
+        ${i.risk?`<span class="badge ${i.risk==='נמוך'?'bg-g':i.risk==='גבוה'?'bg-r':'bg-a'}">סיכון ${esc(i.risk)}</span>`:''}
+      </div>
+      <div class="grid">
+        ${i.price!=null?`<div class="cell"><div class="k">מחיר היום</div><div class="v num">${esc(nfNum.format(i.price))}</div></div>`:''}
+        ${i.buy!=null?`<div class="cell"><div class="k">מחיר לקנייה</div><div class="v num">${esc(nfNum.format(i.buy))}</div></div>`:''}
+        ${i.sell!=null?`<div class="cell"><div class="k">מחיר למכירה</div><div class="v num">${esc(nfNum.format(i.sell))}</div></div>`:''}
+      </div>
+      ${i.stop!=null?`<div class="note">אם המחיר יורד מתחת ל־<b class="num">${esc(nfNum.format(i.stop))}</b>, כדאי לשקול לצאת.</div>`:''}
+      ${Array.isArray(i.why)&&i.why.length?`<div class="note"><ul style="padding-inline-start:20px">${i.why.map(w=>'<li>'+esc(w)+'</li>').join('')}</ul></div>`:''}
+      ${i.about?`<details><summary>מה החברה עושה?</summary><div class="body">${esc(i.about)}</div></details>`:''}
+    </div>`).join('');
+}
+
+/* ============================================================
+   Check a stock
+   ============================================================ */
+document.getElementById('q').addEventListener('input',e=>{
+  const v=e.target.value.trim(); const S=document.getElementById('sugg');
+  if(v.length<2){S.innerHTML='';return;}
+  const lv=v.toLowerCase();
+  const hits=TASE.filter(t=>PRICEABLE.has(t.sub)&&((t.he&&t.he.includes(v))||(t.en&&t.en.toLowerCase().includes(lv))||(t.sym&&t.sym.toLowerCase().startsWith(lv)))).slice(0,6);
+  S.innerHTML=hits.length?`<div class="sugg">${hits.map(h=>`<button data-id="a/TLV-${esc(h.sym)}" data-nm="${esc(h.he||h.en)}">${esc(h.he||h.en)} <span class="tkr" style="color:#3d4a58">${esc(h.sym)}</span></button>`).join('')}</div>`:'';
+  S.querySelectorAll('button').forEach(b=>b.onclick=()=>{S.innerHTML='';checkStock(b.dataset.id,b.dataset.nm);});
+});
+document.getElementById('go').onclick=()=>{
+  const v=document.getElementById('q').value.trim(); if(!v)return;
+  document.getElementById('sugg').innerHTML='';
+  if(/^[A-Za-z.\-]{1,6}$/.test(v)) return checkStock('s/'+v.toLowerCase(),v.toUpperCase());
+  const lv=v.toLowerCase();
+  const h=TASE.find(t=>PRICEABLE.has(t.sub)&&((t.he&&t.he.includes(v))||(t.en&&t.en.toLowerCase()===lv)||(t.sym&&t.sym.toLowerCase()===lv)));
+  if(h)return checkStock('a/TLV-'+h.sym,h.he||h.en);
+  document.getElementById('result').innerHTML=`<div class="card"><div class="note">לא מצאנו נייר בשם הזה. נסה להקליד את הסימבול, לדוגמה AAPL.</div></div>`;
+};
+async function checkStock(id,nm){
+  const R=document.getElementById('result');
+  R.innerHTML=`<div class="center" style="padding:20px"><span class="spin"></span> בודק…</div>`;
+  const q=await quote(id);
+  if(!q){R.innerHTML=`<div class="card"><div class="note">לא הצלחנו למצוא מחיר עדכני לנייר הזה.</div></div>`;return;}
+  const isUS=id.startsWith('s/');
+  const o={name:nm,sub:(isUS?'נאסד"ק':'תל אביב')+' · '+(q.ex||''),priceNow:q.p,cur:isUS?'USD':'ILS',
+    lo:q.l52,hi:q.h52,v:verdict(q.p,q.l52,q.h52)};
+  if(o.lo!=null&&o.hi!=null)o.targets={sell:o.hi,buy:o.lo+(o.hi-o.lo)*0.2};
+  o.details=`<b>מקור:</b> stockanalysis.com, ${esc(q.u||'')}.<br><b>הכלל:</b> הרצפה והתקרה הן המחיר הנמוך והגבוה ביותר ב־52 השבועות האחרונים.`;
+  R.innerHTML=cardHTML(o);
+}
+
+/* ============================================================
+   Boot
+   ============================================================ */
+(async function(){
+  try{ if(navigator.storage&&navigator.storage.persist) await navigator.storage.persist(); }catch(e){}
+  await DB.open().catch(()=>{});
+  await loadTase();
+  if(DB.db){
+    PORT=await DB.get('portfolio');
+    if(PORT&&PORT.fileDateTxt) document.getElementById('lastup').innerHTML='הקובץ האחרון: <b>'+esc(PORT.fileDateTxt)+'</b>';
+  }
+  await renderPortfolio();
+  renderIdeas();
+})();
+</script>
+</body>
+</html>
