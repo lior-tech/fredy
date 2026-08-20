@@ -95,6 +95,15 @@ nav.tabs button[aria-selected="true"]{background:#12283d;color:#fff;border-color
 .rbar{position:relative;height:26px;background:linear-gradient(90deg,#e3f5ea,#fdf2dc,#fdeaec);border-radius:999px;margin:8px 0;border:2px solid var(--line)}
 .rdot{position:absolute;top:-6px;width:6px;height:32px;background:#12283d;border-radius:3px}
 .note{margin-top:14px;font-size:.86em;line-height:1.55}
+.why{margin-top:18px;background:#f2f6fa;border:2px solid #b9cddd;border-radius:16px;padding:16px 18px}
+.whyh{font-weight:800;font-size:.86em;color:var(--blue);margin-bottom:8px}
+.whyl{font-weight:700;font-size:.9em;margin-bottom:10px}
+.whyul{padding-inline-start:22px;font-size:.84em;line-height:1.8;margin:0}
+.whyr{margin-top:10px;font-size:.82em;color:var(--ink2);font-weight:600}
+.whyc{margin-top:10px;font-size:.78em;color:var(--amber);font-weight:700;line-height:1.5}
+.src{margin-top:14px;background:#f7f9fb;border:2px dashed var(--line);border-radius:14px;padding:14px 16px}
+.srch{font-weight:800;font-size:.78em;color:var(--ink2);margin-bottom:6px}
+.srcul{padding-inline-start:22px;font-size:.76em;line-height:1.7;color:var(--ink2);margin:0}
 details{margin-top:14px}
 summary{cursor:pointer;font-weight:800;color:var(--blue);font-size:.86em;padding:12px 0;min-height:48px;display:flex;align-items:center}
 details .body{font-size:.84em;color:var(--ink2);line-height:1.6;padding-top:6px}
@@ -214,6 +223,11 @@ const dShort= new Intl.DateTimeFormat('he-IL',{day:'2-digit',month:'2-digit',yea
 
 const money=(v,cur)=> cur==='USD' ? nfUSD.format(v) : (Math.abs(v)>=1000?nfILS.format(v):nfILS2.format(v));
 const pct  =(v)=> nfPct.format(v/100);
+const dTime = new Intl.DateTimeFormat('he-IL',{dateStyle:'long',timeStyle:'short'});
+function srcTime(q){
+  const t = q && (typeof q.ts==='number' ? q.ts : null);
+  return t ? dTime.format(new Date(t)) : (q&&q.u ? q.u : 'לא ידוע');
+}
 const esc  =(s)=> String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
 /* ============================================================
@@ -462,13 +476,48 @@ function resolve(rec){
    ============================================================ */
 function verdict(price,lo,hi){
   if(lo==null||hi==null||hi<=lo)return null;
-  const pos=(price-lo)/(hi-lo);
-  if(pos>=0.85) return {k:'r',cls:'r',bg:'bg-r',txt:'לשקול למכור',
-    why:'המחיר קרוב מאוד לשיא של התקופה. זה לא אומר שהוא ימשיך לרדת, אבל זו נקודה שכדאי לשים לב אליה.'};
-  if(pos<=0.20) return {k:'g',cls:'g',bg:'bg-g',txt:'לשקול להוסיף',
-    why:'המחיר קרוב לתחתית של התקופה. זה לא אומר שהוא יעלה, אבל הוא זול יחסית לעצמו.'};
-  return {k:'a',cls:'a',bg:'bg-a',txt:'להחזיק ולעקוב',
-    why:'המחיר נמצא באמצע הטווח של התקופה. אין כאן סיבה מיוחדת לפעולה.'};
+  const pos=(price-lo)/(hi-lo), pp=Math.round(pos*100);
+  const base={pos:pp,lo:lo,hi:hi,price:price};
+  if(pos>=0.85) return Object.assign(base,{k:'r',cls:'r',bg:'bg-r',txt:'לשקול למכור',
+    headline:'המחיר קרוב מאוד לשיא של השנה האחרונה.',
+    rule:'הכלל: כשהמחיר נמצא מעל 85% מהטווח השנתי, זו נקודה ששווה לשים לב אליה.',
+    caveat:'זה לא אומר שהמחיר ימשיך לרדת. זו לא תחזית.'});
+  if(pos<=0.20) return Object.assign(base,{k:'g',cls:'g',bg:'bg-g',txt:'לשקול להוסיף',
+    headline:'המחיר קרוב לתחתית של השנה האחרונה.',
+    rule:'הכלל: כשהמחיר נמצא מתחת ל-20% מהטווח השנתי, הנייר זול יחסית לעצמו.',
+    caveat:'זה לא אומר שהמחיר יעלה. לפעמים מחיר יורד מסיבה טובה.'});
+  return Object.assign(base,{k:'a',cls:'a',bg:'bg-a',txt:'להחזיק ולעקוב',
+    headline:'המחיר נמצא באמצע הטווח של השנה האחרונה.',
+    rule:'הכלל: בין 20% ל-85% מהטווח השנתי אין סיבה מיוחדת לפעולה.',
+    caveat:'אין כאן סימן לכאן או לכאן.'});
+}
+
+/* The reasoning box. Shows the actual numbers the decision was made from,
+   the rule that was applied, and an explicit reminder that it is a mechanical
+   rule and not a prediction. Always visible, never hidden behind a click. */
+function whyHTML(v,cur){
+  if(!v) return '';
+  const u=cur==='USD'?' $':' אג׳';
+  return `<div class="why">
+    <div class="whyh">למה ההמלצה הזו?</div>
+    <div class="whyl">${esc(v.headline)}</div>
+    <ul class="whyul">
+      <li>המחיר היום: <b class="num">${esc(nfNum.format(v.price))}</b>${esc(u)}</li>
+      <li>הטווח בשנה האחרונה: <b class="num">${esc(nfNum.format(v.lo))}</b> עד <b class="num">${esc(nfNum.format(v.hi))}</b></li>
+      <li>המחיר נמצא ב־<b class="num">${esc(v.pos)}%</b> מהטווח הזה</li>
+    </ul>
+    <div class="whyr">${esc(v.rule)}</div>
+    <div class="whyc">⚠ ${esc(v.caveat)} זהו חישוב אוטומטי לפי כלל קבוע, לא ייעוץ.</div>
+  </div>`;
+}
+
+/* Where every number on the card came from, with its date. */
+function sourcesHTML(list){
+  if(!list||!list.length) return '';
+  return `<div class="src">
+    <div class="srch">מקורות המידע</div>
+    <ul class="srcul">${list.map(x=>`<li><b>${esc(x[0])}:</b> ${esc(x[1])}</li>`).join('')}</ul>
+  </div>`;
 }
 
 /* ============================================================
@@ -513,8 +562,8 @@ function cardHTML(o){
       ${o.yields.map(y=>`<div class="cell"><div class="k">${esc(y[0])}</div><div class="v num ${y[1]>=0?'pos':'neg'}">${esc(pct(y[1]))}</div></div>`).join('')}
     </div>`;
 
-  const note=v?`<div class="note">${esc(v.why)}</div>`
-              :`<div class="note">${esc(o.reason||'ניתוח מחירים לא זמין לנייר הזה.')}</div>`;
+  const note=v ? whyHTML(v,o.cur)
+              : `<div class="note">${esc(o.reason||'ניתוח מחירים לא זמין לנייר הזה.')}</div>`;
 
   return `<div class="card ${cls}">
     <div class="cardhead">
@@ -524,6 +573,7 @@ function cardHTML(o){
     <div class="grid">${cells}</div>
     ${extra}
     ${note}
+    ${sourcesHTML(o.sources)}
     ${o.companyName?`<details class="cinfo" data-company="${esc(o.companyName)}"><summary>מה החברה עושה?</summary><div class="cbody"><div class="body">לחץ כדי לטעון…</div></div></details>`:''}
     <details><summary>פרטים נוספים</summary><div class="body">${o.details||''}</div></details>
   </div>`;
@@ -584,11 +634,14 @@ async function renderPortfolio(){
         if(o.lo!=null&&o.hi!=null){
           o.targets={sell:o.hi,buy:o.lo+(o.hi-o.lo)*0.2};
         }
-        details+=`<br><b>מחיר שוק:</b> ${esc(q.u||'')} (${esc(q.ex||'')}).`
-          +`<br><b>הכלל:</b> הרצפה והתקרה הן המחיר הנמוך והגבוה ביותר ב־52 השבועות האחרונים.`
-          +` אם המחיר בשליש התחתון של הטווח — לשקול להוסיף. בשישית העליונה — לשקול למכור. באמצע — להחזיק.`;
+        o.sources=[
+          ['מחיר ושיא ושפל שנתי','אתר stockanalysis.com, בבורסת '+(q.ex||'')+', נכון ל־'+srcTime(q)],
+          ['כמות ומחיר קנייה','קובץ האחזקות של בנק דיסקונט'+(PORT.fileDateTxt?', מתאריך '+PORT.fileDateTxt:'')]
+        ];
+        details+=`<br><b>מחיר שוק:</b> ${esc(srcTime(q))} (${esc(q.ex||'')}).`;
       }else{
         o.reason='לא הצלחנו למצוא מחיר עדכני לנייר הזה כרגע.';
+        o.sources=[['כמות ושווי','קובץ האחזקות של בנק דיסקונט'+(PORT.fileDateTxt?', מתאריך '+PORT.fileDateTxt:'')]];
       }
     }else{
       const isFund = !res.meta && res.secNo;
@@ -596,6 +649,7 @@ async function renderPortfolio(){
         ? 'זו כנראה קרן נאמנות. קרנות לא נסחרות כמו מניה, ולכן אין להן שער גבוה ונמוך יומי.'
         : 'ניתוח מחירים לא זמין לנייר הזה. אגרות חוב וקרנות לא נסחרות כמו מניות.';
       details+=`<br>הנתונים המוצגים הם של הבנק בלבד, ללא מחיר שוק חי.`;
+      o.sources=[['כמות, שווי ומחיר אחרון','קובץ האחזקות של בנק דיסקונט'+(PORT.fileDateTxt?', מתאריך '+PORT.fileDateTxt:'')]];
     }
     o.details=details;
     // a name we can look the company up by: Hebrew name for TASE, registered name for US
@@ -723,7 +777,12 @@ async function renderIdeas(){
         ${i.sell!=null?`<div class="cell"><div class="k">מחיר למכירה</div><div class="v num">${esc(nfNum.format(i.sell))}</div></div>`:''}
       </div>
       ${i.stop!=null?`<div class="note">אם המחיר יורד מתחת ל־<b class="num">${esc(nfNum.format(i.stop))}</b>, כדאי לשקול לצאת.</div>`:''}
-      ${Array.isArray(i.why)&&i.why.length?`<div class="note"><ul style="padding-inline-start:20px">${i.why.map(w=>'<li>'+esc(w)+'</li>').join('')}</ul></div>`:''}
+      ${Array.isArray(i.why)&&i.why.length?`<div class="why"><div class="whyh">למה ההמלצה הזו?</div>
+        <ul class="whyul">${i.why.map(w=>'<li>'+esc(w)+'</li>').join('')}</ul>
+        ${i.rule?`<div class="whyr">${esc(i.rule)}</div>`:''}
+        <div class="whyc">⚠ זו אינה תחזית ואינה ייעוץ. מחירים משתנים כל יום.</div></div>`:''}
+      ${sourcesHTML([['מחירים','אתר stockanalysis.com, נכון ל־'+dLong.format(new Date(ts))]].concat(
+        Array.isArray(i.sources)?i.sources.map(x=>['מקור נוסף',x]):[]))}
       ${i.about?`<details><summary>מה החברה עושה?</summary><div class="body">${esc(i.about)}</div></details>`:''}
     </div>`).join('');
 }
@@ -757,7 +816,8 @@ async function checkStock(id,nm){
   const o={name:nm,sub:(isUS?'נאסד"ק':'תל אביב')+' · '+(q.ex||''),priceNow:q.p,cur:isUS?'USD':'ILS',
     lo:q.l52,hi:q.h52,v:verdict(q.p,q.l52,q.h52)};
   if(o.lo!=null&&o.hi!=null)o.targets={sell:o.hi,buy:o.lo+(o.hi-o.lo)*0.2};
-  o.details=`<b>מקור:</b> stockanalysis.com, ${esc(q.u||'')}.<br><b>הכלל:</b> הרצפה והתקרה הן המחיר הנמוך והגבוה ביותר ב־52 השבועות האחרונים.`;
+  o.sources=[['מחיר ושיא ושפל שנתי','אתר stockanalysis.com, בבורסת '+(q.ex||'')+', נכון ל־'+srcTime(q)]];
+  o.details=`<b>הכלל:</b> הרצפה והתקרה הן המחיר הנמוך והגבוה ביותר ב־52 השבועות האחרונים.`;
   o.companyName = isUS ? (USNAMES[id.replace('s/','').toUpperCase()]||nm) : nm;
   R.innerHTML=cardHTML(o);
   // open it straight away here: he asked for this one specifically
