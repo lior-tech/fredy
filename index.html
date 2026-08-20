@@ -272,7 +272,7 @@ const DB={
 /* ============================================================
    TASE master: security number -> symbol -> stockanalysis id
    ============================================================ */
-let TASE=[], TASEbyNo=new Map();
+let TASE=[], TASEbyNo=new Map(), USNAMES={};
 async function loadTase(){
   try{
     const txt=await (await fetch('data/tase_master.csv')).text();
@@ -287,6 +287,52 @@ async function loadTase(){
       TASE.push(o); TASEbyNo.set(String(o.no),o);
     }
   }catch(e){ console.warn('tase master failed',e); }
+  try{ USNAMES = await (await fetch('data/us_tickers.json')).json(); }catch(e){ USNAMES={}; }
+}
+
+/* ============================================================
+   Company profile, in Hebrew.
+   Hebrew Wikipedia gives a real description and the Wikidata id;
+   Wikidata then gives founded year, employees and headquarters.
+   Both send CORS headers so the browser can call them directly.
+   ============================================================ */
+const infoCache=new Map();
+async function companyInfo(searchName){
+  if(!searchName) return null;
+  if(infoCache.has(searchName)) return infoCache.get(searchName);
+  let out=null;
+  try{
+    const su=await (await fetch('https://he.wikipedia.org/w/api.php?action=query&list=search&srsearch='
+      +encodeURIComponent(searchName)+'&srlimit=1&format=json&origin=*')).json();
+    const hit=su&&su.query&&su.query.search&&su.query.search[0];
+    if(hit){
+      const sm=await (await fetch('https://he.wikipedia.org/api/rest_v1/page/summary/'
+        +encodeURIComponent(hit.title))).json();
+      if(sm&&sm.extract){
+        out={title:sm.title,text:sm.extract,qid:sm.wikibase_item||null,facts:[]};
+        if(out.qid){
+          try{
+            const wd=await (await fetch('https://www.wikidata.org/w/api.php?action=wbgetentities&ids='
+              +out.qid+'&props=claims&format=json&origin=*')).json();
+            const c=wd.entities[out.qid].claims||{};
+            const amt=p=>{try{return c[p][0].mainsnak.datavalue.value.amount.replace('+','');}catch(e){return null;}};
+            const yr =p=>{try{return c[p][0].mainsnak.datavalue.value.time.slice(1,5);}catch(e){return null;}};
+            const f=yr('P571'); if(f) out.facts.push(['נוסדה בשנת',f]);
+            const e=amt('P1128'); if(e) out.facts.push(['מספר עובדים',nfInt.format(+e)]);
+          }catch(e){}
+        }
+      }
+    }
+  }catch(e){}
+  infoCache.set(searchName,out); return out;
+}
+function infoHTML(info){
+  if(!info) return '<div class="body">אין לנו כרגע מידע נוסף על החברה הזו.</div>';
+  const facts=info.facts.length
+    ? `<div class="grid">${info.facts.map(f=>`<div class="cell"><div class="k">${esc(f[0])}</div><div class="v num">${esc(f[1])}</div></div>`).join('')}</div>`
+    : '';
+  return `<div class="body">${esc(info.text)}</div>${facts}
+    <div class="body" style="margin-top:10px;opacity:.75">המידע מוויקיפדיה בעברית.</div>`;
 }
 
 /* which instruments can actually be priced */
@@ -478,6 +524,7 @@ function cardHTML(o){
     <div class="grid">${cells}</div>
     ${extra}
     ${note}
+    ${o.companyName?`<details class="cinfo" data-company="${esc(o.companyName)}"><summary>מה החברה עושה?</summary><div class="cbody"><div class="body">לחץ כדי לטעון…</div></div></details>`:''}
     <details><summary>פרטים נוספים</summary><div class="body">${o.details||''}</div></details>
   </div>`;
 }
@@ -551,6 +598,9 @@ async function renderPortfolio(){
       details+=`<br>הנתונים המוצגים הם של הבנק בלבד, ללא מחיר שוק חי.`;
     }
     o.details=details;
+    // a name we can look the company up by: Hebrew name for TASE, registered name for US
+    if(res.market==='US')      o.companyName = USNAMES[(res.sym||'').toUpperCase()] || r.name;
+    else if(res.meta)          o.companyName = res.meta.he || res.meta.en || r.name;
     cards.push({o,rank:o.v?({r:0,a:1,g:2})[o.v.k]:3});
   }
   cards.sort((a,b)=>a.rank-b.rank);
@@ -708,8 +758,24 @@ async function checkStock(id,nm){
     lo:q.l52,hi:q.h52,v:verdict(q.p,q.l52,q.h52)};
   if(o.lo!=null&&o.hi!=null)o.targets={sell:o.hi,buy:o.lo+(o.hi-o.lo)*0.2};
   o.details=`<b>מקור:</b> stockanalysis.com, ${esc(q.u||'')}.<br><b>הכלל:</b> הרצפה והתקרה הן המחיר הנמוך והגבוה ביותר ב־52 השבועות האחרונים.`;
+  o.companyName = isUS ? (USNAMES[id.replace('s/','').toUpperCase()]||nm) : nm;
   R.innerHTML=cardHTML(o);
+  // open it straight away here: he asked for this one specifically
+  const d=R.querySelector('details.cinfo'); if(d){ d.open=true; loadCompany(d); }
 }
+
+/* lazy company loading: fires the first time a card is opened */
+async function loadCompany(d){
+  if(d.dataset.done)return; d.dataset.done='1';
+  const box=d.querySelector('.cbody');
+  box.innerHTML='<div class="body"><span class="spin"></span> טוען מידע על החברה…</div>';
+  const info=await companyInfo(d.dataset.company);
+  box.innerHTML=infoHTML(info);
+}
+document.addEventListener('toggle',e=>{
+  const d=e.target;
+  if(d&&d.tagName==='DETAILS'&&d.classList.contains('cinfo')&&d.open) loadCompany(d);
+},true);
 
 /* ============================================================
    Boot
