@@ -252,6 +252,7 @@ const esc  =(s)=> String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'
         document.getElementById(t2).setAttribute('aria-selected', t2===t);
         document.getElementById(p2).classList.toggle('hidden', p2!==p);
       });
+      if(p==='p2') renderIdeas();
       window.scrollTo({top:0,behavior:'smooth'});
     };
   });
@@ -302,6 +303,7 @@ async function loadTase(){
     }
   }catch(e){ console.warn('tase master failed',e); }
   try{ USNAMES = await (await fetch('data/us_tickers.json')).json(); }catch(e){ USNAMES={}; }
+  TASE.forEach(t=>{ if(t.sym) HEB_NAME[t.sym]=t.he||t.en; });
 }
 
 /* ============================================================
@@ -745,46 +747,78 @@ function staleState(ts){
   const h=(Date.now()-ts)/36e5;
   if(h<26)return'fresh'; if(h<72)return'stale'; return'dead';
 }
+/* The universe screened each day. Well known, liquid, widely held names only.
+   Deliberately fixed and public: it says nothing about what Fredy owns. */
+const UNIVERSE=[
+  // Tel Aviv
+  'a/TLV-LUMI','a/TLV-POLI','a/TLV-DSCT','a/TLV-MZTF','a/TLV-FIBI','a/TLV-TEVA','a/TLV-NICE',
+  'a/TLV-ESLT','a/TLV-ICL','a/TLV-ORA','a/TLV-BEZQ','a/TLV-AZRG','a/TLV-MLSR','a/TLV-TSEM',
+  'a/TLV-CAMT','a/TLV-NVMI','a/TLV-ELAL','a/TLV-PHOE','a/TLV-HARL','a/TLV-MGDL','a/TLV-CLIS',
+  'a/TLV-DLEKG','a/TLV-ALHE','a/TLV-AMOT','a/TLV-SAE','a/TLV-ENLT','a/TLV-ARPT','a/TLV-ISCD','a/TLV-BIG',
+  // NASDAQ and large US names
+  's/aapl','s/msft','s/nvda','s/googl','s/amzn','s/meta','s/tsla','s/avgo','s/amd','s/intc',
+  's/csco','s/qcom','s/txn','s/mu','s/adbe','s/nflx','s/pep','s/cost','s/sbux','s/pypl',
+  's/mrna','s/gild','s/amgn','s/mdlz','s/team'
+];
+const HEB_NAME={}; // filled from the TASE master at boot
+
+async function mapLimit(items,limit,fn){
+  const out=new Array(items.length); let i=0;
+  await Promise.all(Array.from({length:Math.min(limit,items.length)},async()=>{
+    while(i<items.length){ const k=i++; out[k]=await fn(items[k],k); }
+  }));
+  return out;
+}
+
+let ideasDone=false;
 async function renderIdeas(){
+  if(ideasDone) return; ideasDone=true;
   const E=document.getElementById('ideas');
-  let j=null;
-  try{ const r=await fetch('data/ideas.json',{cache:'no-store'}); if(r.ok) j=await r.json(); }catch(e){}
-  if(!j||!Array.isArray(j.ideas)||!j.ideas.length){
-    E.innerHTML=`<div class="card center"><div class="nm">אין המלצות כרגע</div>
-      <div class="note">הרשימה מתעדכנת אוטומטית כל בוקר. אם ההודעה הזו נשארת כמה ימים, כדאי לספר לליאור.</div></div>`;
-    return;
+  E.innerHTML=`<div class="center" style="padding:26px"><span class="spin"></span>
+     <div style="margin-top:10px">בודק ${UNIVERSE.length} מניות מוכרות…</div></div>`;
+
+  const res=(await mapLimit(UNIVERSE,6,async id=>{
+    const q=await quote(id); if(!q||q.l52==null||q.h52==null||q.h52<=q.l52) return null;
+    return {id,q,pos:(q.p-q.l52)/(q.h52-q.l52)};
+  })).filter(Boolean);
+
+  if(!res.length){
+    E.innerHTML=bannerHTML('b-bad','לא הצלחנו להביא מחירים כרגע. נסה שוב מאוחר יותר.');
+    ideasDone=false; return;
   }
-  const ts=Date.parse(j.generated_at||'')||0;
-  const st=staleState(ts);
-  if(st==='dead'){
-    E.innerHTML=bannerHTML('b-bad','אין נתונים עדכניים כרגע. ההמלצות האחרונות הן מתאריך <b>'+esc(dLong.format(new Date(ts)))+'</b> ולכן אינן מוצגות.')
-      +`<div class="card center"><div class="note">כדאי לספר לליאור שהעמוד לא מתעדכן.</div></div>`;
-    return;
-  }
-  const head = st==='stale'
-    ? bannerHTML('b-warn','ההמלצות האלה מתאריך <b>'+esc(dLong.format(new Date(ts)))+'</b> ולא התעדכנו היום. ייתכן שהמחירים השתנו.')
-    : bannerHTML('b-ok','עודכן ב־'+esc(dLong.format(new Date(ts))));
-  E.innerHTML=head+j.ideas.map(i=>`
-    <div class="card">
-      <div class="cardhead">
-        <div><div class="nm">${esc(i.name_he||i.name||i.symbol)}</div>
-          <div class="sub tkr">${esc(i.symbol||'')} · ${esc(i.market==='TASE'?'תל אביב':'נאסד"ק')}</div></div>
-        ${i.risk?`<span class="badge ${i.risk==='נמוך'?'bg-g':i.risk==='גבוה'?'bg-r':'bg-a'}">סיכון ${esc(i.risk)}</span>`:''}
-      </div>
-      <div class="grid">
-        ${i.price!=null?`<div class="cell"><div class="k">מחיר היום</div><div class="v num">${esc(nfNum.format(i.price))}</div></div>`:''}
-        ${i.buy!=null?`<div class="cell"><div class="k">מחיר לקנייה</div><div class="v num">${esc(nfNum.format(i.buy))}</div></div>`:''}
-        ${i.sell!=null?`<div class="cell"><div class="k">מחיר למכירה</div><div class="v num">${esc(nfNum.format(i.sell))}</div></div>`:''}
-      </div>
-      ${i.stop!=null?`<div class="note">אם המחיר יורד מתחת ל־<b class="num">${esc(nfNum.format(i.stop))}</b>, כדאי לשקול לצאת.</div>`:''}
-      ${Array.isArray(i.why)&&i.why.length?`<div class="why"><div class="whyh">למה ההמלצה הזו?</div>
-        <ul class="whyul">${i.why.map(w=>'<li>'+esc(w)+'</li>').join('')}</ul>
-        ${i.rule?`<div class="whyr">${esc(i.rule)}</div>`:''}
-        <div class="whyc">⚠ זו אינה תחזית ואינה ייעוץ. מחירים משתנים כל יום.</div></div>`:''}
-      ${sourcesHTML([['מחירים','אתר stockanalysis.com, נכון ל־'+dLong.format(new Date(ts))]].concat(
-        Array.isArray(i.sources)?i.sources.map(x=>['מקור נוסף',x]):[]))}
-      ${i.about?`<details><summary>מה החברה עושה?</summary><div class="body">${esc(i.about)}</div></details>`:''}
-    </div>`).join('');
+
+  res.sort((a,b)=>a.pos-b.pos);
+  const picks=res.slice(0,8);
+  const now=new Date();
+
+  E.innerHTML = bannerHTML('b-ok','נבדקו <b>'+esc(res.length)+'</b> מניות מוכרות בתל אביב ובארצות הברית, '
+      +esc(dLong.format(now))+'. אלה שמונה שנמצאות הכי נמוך בטווח של השנה האחרונה.')
+    + `<div class="card" style="background:#f2f6fa">
+        <div class="whyh">איך נבחרה הרשימה הזו?</div>
+        <ul class="whyul">
+          <li>נבדקה רשימה קבועה של ${esc(UNIVERSE.length)} מניות גדולות ומוכרות. הרשימה לא משתנה לפי מה שיש בתיק שלך.</li>
+          <li>לכל מניה חושב איפה המחיר היום ביחס לשיא ולשפל של השנה האחרונה.</li>
+          <li>נבחרו השמונה שנמצאות הכי קרוב לתחתית הטווח.</li>
+        </ul>
+        <div class="whyc">⚠ מניה זולה יחסית לעצמה אינה בהכרח מניה טובה. לפעמים המחיר ירד מסיבה אמיתית. זו רשימה מחושבת, לא תחזית ולא ייעוץ.</div>
+      </div>`
+    + picks.map(x=>{
+        const isUS=x.id.startsWith('s/');
+        const sym=x.id.replace('s/','').replace('a/TLV-','');
+        const nm = isUS ? (USNAMES[sym.toUpperCase()]||sym.toUpperCase()) : (HEB_NAME[sym]||sym);
+        const v=verdict(x.q.p,x.q.l52,x.q.h52);
+        const o={
+          name:nm, sub:(isUS?'נאסד"ק':'תל אביב')+' · '+sym,
+          priceNow:x.q.p, cur:isUS?'USD':'ILS',
+          lo:x.q.l52, hi:x.q.h52, v:v,
+          targets:{sell:x.q.h52, buy:x.q.l52+(x.q.h52-x.q.l52)*0.2},
+          companyName: isUS ? (USNAMES[sym.toUpperCase()]||nm) : nm,
+          sources:[['מחיר ושיא ושפל שנתי','אתר stockanalysis.com, בבורסת '+(x.q.ex||'')+', נכון ל־'+srcTime(x.q)]],
+          details:'<b>הכלל:</b> הרצפה והתקרה הן המחיר הנמוך והגבוה ביותר ב־52 השבועות האחרונים. '
+                 +'מחיר הקנייה המוצע הוא הרבע התחתון של הטווח, ומחיר המכירה הוא השיא השנתי.'
+        };
+        return cardHTML(o);
+      }).join('');
 }
 
 /* ============================================================
@@ -849,7 +883,6 @@ document.addEventListener('toggle',e=>{
     if(PORT&&PORT.fileDateTxt) document.getElementById('lastup').innerHTML='הקובץ האחרון: <b>'+esc(PORT.fileDateTxt)+'</b>';
   }
   await renderPortfolio();
-  renderIdeas();
 })();
 </script>
 </body>
