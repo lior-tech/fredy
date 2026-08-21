@@ -368,7 +368,14 @@ async function quote(id){
   }catch(e){}
   pxCache.set(id,null); return null;
 }
+const histCache=new Map();
 async function history(id,range){
+  const k=id+'|'+range;
+  if(histCache.has(k)) return histCache.get(k);
+  const out=await historyFetch(id,range);
+  histCache.set(k,out); return out;
+}
+async function historyFetch(id,range){
   try{
     const r=await fetch('https://stockanalysis.com/api/symbol/'+id+'/history?range='+range);
     const j=await r.json();
@@ -494,6 +501,59 @@ function verdict(price,lo,hi){
     caveat:'אין כאן סימן לכאן או לכאן.'});
 }
 
+/* Risk level, from how much the share actually moves on an average day.
+   Thresholds calibrated on the measured distribution across the universe:
+   median 1.69%/day, 25th percentile 1.42%, 75th percentile 2.50%. */
+function riskLevel(rows){
+  if(!rows||rows.length<40) return null;
+  const r=rows.slice().sort((a,b)=>a.t<b.t?-1:1).slice(-60);
+  const c=r.map(x=>x.a!=null?x.a:x.c);
+  const mv=[]; for(let i=1;i<c.length;i++) if(c[i-1]) mv.push(Math.abs(c[i]/c[i-1]-1)*100);
+  if(mv.length<40) return null;
+  const avg=mv.reduce((a,b)=>a+b,0)/mv.length;
+  if(avg<1.5)  return {k:'low', txt:'סיכון נמוך', bg:'bg-g', avg:avg,
+    why:'המניה זזה בממוצע '+nfNum.format(avg)+'% ביום. זו תנודתיות נמוכה יחסית.'};
+  if(avg<2.8)  return {k:'mid', txt:'סיכון בינוני', bg:'bg-a', avg:avg,
+    why:'המניה זזה בממוצע '+nfNum.format(avg)+'% ביום. זה טווח רגיל למניה גדולה.'};
+  return {k:'high', txt:'סיכון גבוה', bg:'bg-r', avg:avg,
+    why:'המניה זזה בממוצע '+nfNum.format(avg)+'% ביום. זו מניה תנודתית, המחיר יכול לקפוץ ולצנוח מהר.'};
+}
+
+/* Recent news, in Hebrew for Tel Aviv and English for the US.
+   Google News RSS carries no CORS header, so it is read through a public
+   proxy. If the proxy is unavailable the news section simply says so and
+   nothing else on the card is affected. */
+const newsCache=new Map();
+async function fetchNews(name,hebrew){
+  const key=name+'|'+hebrew;
+  if(newsCache.has(key)) return newsCache.get(key);
+  const q=encodeURIComponent(name+(hebrew?' מניה':' stock'));
+  const feed=hebrew
+    ? 'https://news.google.com/rss/search?q='+q+'&hl=he&gl=IL&ceid=IL:he'
+    : 'https://news.google.com/rss/search?q='+q+'&hl=en-US&gl=US&ceid=US:en';
+  let out=null;
+  try{
+    const r=await fetch('https://api.allorigins.win/raw?url='+encodeURIComponent(feed));
+    const x=await r.text();
+    const doc=new DOMParser().parseFromString(x,'text/xml');
+    const items=Array.from(doc.querySelectorAll('item')).slice(0,4).map(it=>({
+      title:(it.querySelector('title')||{}).textContent||'',
+      date:(it.querySelector('pubDate')||{}).textContent||'',
+      src:(it.querySelector('source')||{}).textContent||''
+    })).filter(n=>n.title);
+    if(items.length) out=items;
+  }catch(e){}
+  newsCache.set(key,out); return out;
+}
+function newsHTML(items){
+  if(!items||!items.length)
+    return '<div class="body">לא נמצאו כתבות עדכניות על המניה הזו כרגע.</div>';
+  return '<ul class="whyul" style="font-size:.82em">'+items.map(n=>{
+    let d=''; try{ d=dLong.format(new Date(n.date)); }catch(e){}
+    return '<li>'+esc(n.title)+'<br><span style="opacity:.7;font-size:.9em">'+esc(n.src)+(d?' · '+esc(d):'')+'</span></li>';
+  }).join('')+'</ul><div class="body" style="margin-top:8px;opacity:.75">כותרות מ־Google News. אנחנו לא בודקים את התוכן שלהן.</div>';
+}
+
 /* The reasoning box. Shows the actual numbers the decision was made from,
    the rule that was applied, and an explicit reminder that it is a mechanical
    rule and not a prediction. Always visible, never hidden behind a click. */
@@ -539,8 +599,9 @@ function cardHTML(o){
   // o: {name, sub, qty, valueILS, costRate, lastRate, q(quote), lo, hi, cur, priceable, reason}
   const v=o.v||null;
   const cls=v?v.cls:'';
-  const badge=v?`<span class="badge ${v.bg}">${esc(v.txt)}</span>`
-                :`<span class="badge bg-n">אין ניתוח מחיר</span>`;
+  const badge=(v?`<span class="badge ${v.bg}">${esc(v.txt)}</span>`
+                :`<span class="badge bg-n">אין ניתוח מחיר</span>`)
+        +(o.risk?`<span class="badge ${o.risk.bg}" style="margin-inline-start:8px">${esc(o.risk.txt)}</span>`:'');
   let cells='';
   if(o.qty!=null)      cells+=`<div class="cell"><div class="k">כמות</div><div class="v num">${esc(nfNum.format(o.qty))}</div></div>`;
   if(o.valueILS!=null) cells+=`<div class="cell"><div class="k">שווי</div><div class="v num">${esc(money(o.valueILS,'ILS'))}</div></div>`;
@@ -576,7 +637,9 @@ function cardHTML(o){
     <div class="grid">${cells}</div>
     ${extra}
     ${note}
+    ${o.risk?`<div class="note" style="font-size:.82em"><b>רמת סיכון:</b> ${esc(o.risk.why)}</div>`:''}
     ${sourcesHTML(o.sources)}
+    ${o.newsName?`<details class="cnews" data-news="${esc(o.newsName)}" data-he="${o.newsHe?'1':'0'}"><summary>מה כתבו על המניה לאחרונה?</summary><div class="nbody"><div class="body">לחץ כדי לטעון…</div></div></details>`:''}
     ${o.companyName?`<details class="cinfo" data-company="${esc(o.companyName)}"><summary>מה החברה עושה?</summary><div class="cbody"><div class="body">לחץ כדי לטעון…</div></div></details>`:''}
     <details><summary>פרטים נוספים</summary><div class="body">${o.details||''}</div></details>
   </div>`;
@@ -631,6 +694,8 @@ async function renderPortfolio(){
     if(res.priceable&&res.id){
       const q=await quote(res.id);
       if(q){
+        const hh=await history(res.id,'5Y');
+        o.risk=riskLevel(hh);
         o.priceNow=q.p; o.cur=(res.market==='US')?'USD':'ILS';
         o.lo=q.l52; o.hi=q.h52;
         o.v=verdict(q.p,q.l52,q.h52);
@@ -658,6 +723,7 @@ async function renderPortfolio(){
     // a name we can look the company up by: Hebrew name for TASE, registered name for US
     if(res.market==='US')      o.companyName = USNAMES[(res.sym||'').toUpperCase()] || r.name;
     else if(res.meta)          o.companyName = res.meta.he || res.meta.en || r.name;
+    if(o.companyName){ o.newsName=o.companyName; o.newsHe=(res.market!=='US'); }
     cards.push({o,rank:o.v?({r:0,a:1,g:2})[o.v.k]:3});
   }
   cards.sort((a,b)=>a.rank-b.rank);
@@ -831,7 +897,7 @@ async function renderIdeas(){
 
   const deep=(await mapLimit(candidates,6,async x=>{
     const h=await history(x.id,'5Y'); const t=trend(h);
-    return t?Object.assign({},x,{t:t}):null;
+    return t?Object.assign({},x,{t:t,risk:riskLevel(h)}):null;
   })).filter(Boolean);
 
   // score: aligned independent signals, plus today's move as the trigger
@@ -869,6 +935,7 @@ async function renderIdeas(){
           lo:x.q.l52, hi:x.q.h52, v:verdict(x.q.p,x.q.l52,x.q.h52),
           targets:{sell:x.q.h52, buy:x.q.l52+(x.q.h52-x.q.l52)*0.2},
           companyName:isUS?(USNAMES[sym]||nm):nm,
+          newsName:isUS?(USNAMES[sym]||nm):nm, newsHe:!isUS, risk:x.risk,
           sources:[
             ['מחיר ונתוני מסחר','אתר stockanalysis.com, בבורסת '+(x.q.ex||'')+', נכון ל־'+srcTime(x.q)],
             ['חישוב המגמה','שנה של מחירי סגירה ומחזורי מסחר יומיים']
@@ -921,6 +988,8 @@ async function checkStock(id,nm){
   o.sources=[['מחיר ושיא ושפל שנתי','אתר stockanalysis.com, בבורסת '+(q.ex||'')+', נכון ל־'+srcTime(q)]];
   o.details=`<b>הכלל:</b> הרצפה והתקרה הן המחיר הנמוך והגבוה ביותר ב־52 השבועות האחרונים.`;
   o.companyName = isUS ? (USNAMES[id.replace('s/','').toUpperCase()]||nm) : nm;
+  o.newsName=o.companyName; o.newsHe=!isUS;
+  const hh=await history(id,'5Y'); o.risk=riskLevel(hh);
   R.innerHTML=cardHTML(o);
   // open it straight away here: he asked for this one specifically
   const d=R.querySelector('details.cinfo'); if(d){ d.open=true; loadCompany(d); }
@@ -934,9 +1003,18 @@ async function loadCompany(d){
   const info=await companyInfo(d.dataset.company);
   box.innerHTML=infoHTML(info);
 }
+async function loadNews(d){
+  if(d.dataset.done)return; d.dataset.done='1';
+  const box=d.querySelector('.nbody');
+  box.innerHTML='<div class="body"><span class="spin"></span> מחפש כתבות…</div>';
+  const items=await fetchNews(d.dataset.news, d.dataset.he==='1');
+  box.innerHTML=newsHTML(items);
+}
 document.addEventListener('toggle',e=>{
   const d=e.target;
-  if(d&&d.tagName==='DETAILS'&&d.classList.contains('cinfo')&&d.open) loadCompany(d);
+  if(!d||d.tagName!=='DETAILS'||!d.open) return;
+  if(d.classList.contains('cinfo')) loadCompany(d);
+  if(d.classList.contains('cnews')) loadNews(d);
 },true);
 
 /* ============================================================
