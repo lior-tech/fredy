@@ -303,6 +303,7 @@ async function loadTase(){
     }
   }catch(e){ console.warn('tase master failed',e); }
   try{ USNAMES = await (await fetch('data/us_tickers.json')).json(); }catch(e){ USNAMES={}; }
+  try{ DUAL = (await (await fetch('data/universe.json')).json()).dual_listed||{}; }catch(e){ DUAL={}; }
   TASE.forEach(t=>{ if(t.sym) HEB_NAME[t.sym.toUpperCase()]=t.he||t.en; });
 }
 
@@ -554,6 +555,53 @@ function newsHTML(items){
   }).join('')+'</ul><div class="body" style="margin-top:8px;opacity:.75">כותרות מ־Google News. אנחנו לא בודקים את התוכן שלהן.</div>';
 }
 
+/* Professional analyst consensus: how many banks and research houses cover the
+   share, what they collectively rate it, and their average 12-month price target.
+   Read through the CORS proxy because the source blocks direct browser access.
+   Israeli shares only have coverage where the company is also listed in the US. */
+let DUAL={};
+const anaCache=new Map();
+async function analysts(id){
+  let usSym=null;
+  if(id.startsWith('s/')) usSym=id.slice(2).toLowerCase();
+  else { const t=id.replace('a/TLV-','').toUpperCase(); if(DUAL[t]) usSym=DUAL[t]; }
+  if(!usSym) return {none:'noUS'};
+  if(anaCache.has(usSym)) return anaCache.get(usSym);
+  let out={none:'fetch'};
+  try{
+    const url='https://stockanalysis.com/stocks/'+usSym+'/';
+    const r=await fetch('https://api.allorigins.win/raw?url='+encodeURIComponent(url));
+    const h=await r.text();
+    if(h.length>5000){
+      const m=h.match(/According to (\d+) analysts, the average rating for \S+ stock is [\\"']*([A-Za-z ]+?)\./);
+      const t=h.match(/analystTarget:\{target:"([^"]*)",change:"([^"]*)",changeWord:"([^"]*)"/);
+      const c=h.match(/analystChart:\{strongBuy:(\d+),buy:(\d+),hold:(\d+),sell:(\d+),strongSell:(\d+)\}/);
+      if(m) out={n:+m[1], rating:m[2].trim(),
+                 target:t?t[1]:null, change:t?t[2]:null, dir:t?t[3]:null,
+                 buckets:c?{sb:+c[1],b:+c[2],h:+c[3],s:+c[4],ss:+c[5]}:null};
+      else out={none:'nocover'};
+    }
+  }catch(e){}
+  anaCache.set(usSym,out); return out;
+}
+const RATING_HE={'Strong Buy':'קנייה חזקה','Buy':'קנייה','Hold':'החזקה','Sell':'מכירה','Strong Sell':'מכירה חזקה'};
+function analystsHTML(a){
+  if(!a||a.none==='noUS')
+    return '<div class="body">למניה הזו אין כיסוי של אנליסטים בינלאומיים. רוב המניות הנסחרות רק בתל אביב לא מסוקרות על ידי בתי השקעות גדולים בחו"ל.</div>';
+  if(a.none) return '<div class="body">לא הצלחנו להביא את דעות האנליסטים כרגע.</div>';
+  const he=RATING_HE[a.rating]||a.rating;
+  const b=a.buckets;
+  const bars=b?`<ul class="whyul" style="font-size:.82em">
+      <li>ממליצים לקנות: <b class="num">${b.sb+b.b}</b></li>
+      <li>ממליצים להחזיק: <b class="num">${b.h}</b></li>
+      <li>ממליצים למכור: <b class="num">${b.s+b.ss}</b></li></ul>`:'';
+  return `<div class="body"><b>${esc(a.n)}</b> אנליסטים מסקרים את המניה. הדירוג הממוצע שלהם: <b>${esc(he)}</b>.</div>
+    ${bars}
+    ${a.target?`<div class="body" style="margin-top:8px">מחיר היעד הממוצע שלהם ל־12 החודשים הקרובים: <b class="num">${esc(a.target)}</b>${a.change?' ('+esc(a.change)+')':''}.</div>`:''}
+    <div class="whyc" style="margin-top:10px">⚠ אלה דעות של אנליסטים בבתי השקעות, לא עובדות. הם טועים לא מעט, ולעיתים יש להם אינטרס.</div>
+    <div class="body" style="margin-top:6px;opacity:.75">מקור: stockanalysis.com${a.viaUS?', לפי הרישום בארה"ב':''}</div>`;
+}
+
 /* The reasoning box. Shows the actual numbers the decision was made from,
    the rule that was applied, and an explicit reminder that it is a mechanical
    rule and not a prediction. Always visible, never hidden behind a click. */
@@ -639,6 +687,7 @@ function cardHTML(o){
     ${note}
     ${o.risk?`<div class="note" style="font-size:.82em"><b>רמת סיכון:</b> ${esc(o.risk.why)}</div>`:''}
     ${sourcesHTML(o.sources)}
+    ${o.anaId?`<details class="cana" data-ana="${esc(o.anaId)}"><summary>מה אומרים האנליסטים?</summary><div class="abody"><div class="body">לחץ כדי לטעון…</div></div></details>`:''}
     ${o.newsName?`<details class="cnews" data-news="${esc(o.newsName)}" data-he="${o.newsHe?'1':'0'}"><summary>מה כתבו על המניה לאחרונה?</summary><div class="nbody"><div class="body">לחץ כדי לטעון…</div></div></details>`:''}
     ${o.companyName?`<details class="cinfo" data-company="${esc(o.companyName)}"><summary>מה החברה עושה?</summary><div class="cbody"><div class="body">לחץ כדי לטעון…</div></div></details>`:''}
     <details><summary>פרטים נוספים</summary><div class="body">${o.details||''}</div></details>
@@ -724,6 +773,7 @@ async function renderPortfolio(){
     if(res.market==='US')      o.companyName = USNAMES[(res.sym||'').toUpperCase()] || r.name;
     else if(res.meta)          o.companyName = res.meta.he || res.meta.en || r.name;
     if(o.companyName){ o.newsName=o.companyName; o.newsHe=(res.market!=='US'); }
+    if(res.id) o.anaId=res.id;
     cards.push({o,rank:o.v?({r:0,a:1,g:2})[o.v.k]:3});
   }
   cards.sort((a,b)=>a.rank-b.rank);
@@ -875,6 +925,7 @@ async function renderIdeas(){
     if(!UNIVERSE.length){
       const u=await (await fetch('data/universe.json',{cache:'no-store'})).json();
       UNIVERSE=u.tase.map(x=>'a/TLV-'+x).concat(u.us.map(x=>'s/'+x.toLowerCase()));
+      DUAL=u.dual_listed||{};
     }
   }catch(e){ E.innerHTML=bannerHTML('b-bad','לא הצלחנו לטעון את רשימת המניות.'); ideasDone=false; return; }
 
@@ -935,7 +986,7 @@ async function renderIdeas(){
           lo:x.q.l52, hi:x.q.h52, v:verdict(x.q.p,x.q.l52,x.q.h52),
           targets:{sell:x.q.h52, buy:x.q.l52+(x.q.h52-x.q.l52)*0.2},
           companyName:isUS?(USNAMES[sym]||nm):nm,
-          newsName:isUS?(USNAMES[sym]||nm):nm, newsHe:!isUS, risk:x.risk,
+          newsName:isUS?(USNAMES[sym]||nm):nm, newsHe:!isUS, risk:x.risk, anaId:x.id,
           sources:[
             ['מחיר ונתוני מסחר','אתר stockanalysis.com, בבורסת '+(x.q.ex||'')+', נכון ל־'+srcTime(x.q)],
             ['חישוב המגמה','שנה של מחירי סגירה ומחזורי מסחר יומיים']
@@ -989,7 +1040,7 @@ async function checkStock(id,nm){
   o.details=`<b>הכלל:</b> הרצפה והתקרה הן המחיר הנמוך והגבוה ביותר ב־52 השבועות האחרונים.`;
   o.companyName = isUS ? (USNAMES[id.replace('s/','').toUpperCase()]||nm) : nm;
   o.newsName=o.companyName; o.newsHe=!isUS;
-  const hh=await history(id,'5Y'); o.risk=riskLevel(hh);
+  const hh=await history(id,'5Y'); o.risk=riskLevel(hh); o.anaId=id;
   R.innerHTML=cardHTML(o);
   // open it straight away here: he asked for this one specifically
   const d=R.querySelector('details.cinfo'); if(d){ d.open=true; loadCompany(d); }
@@ -1003,6 +1054,14 @@ async function loadCompany(d){
   const info=await companyInfo(d.dataset.company);
   box.innerHTML=infoHTML(info);
 }
+async function loadAnalysts(d){
+  if(d.dataset.done)return; d.dataset.done='1';
+  const box=d.querySelector('.abody');
+  box.innerHTML='<div class="body"><span class="spin"></span> בודק דעות אנליסטים…</div>';
+  const a=await analysts(d.dataset.ana);
+  if(a && !a.none && !d.dataset.ana.startsWith('s/')) a.viaUS=true;
+  box.innerHTML=analystsHTML(a);
+}
 async function loadNews(d){
   if(d.dataset.done)return; d.dataset.done='1';
   const box=d.querySelector('.nbody');
@@ -1015,6 +1074,7 @@ document.addEventListener('toggle',e=>{
   if(!d||d.tagName!=='DETAILS'||!d.open) return;
   if(d.classList.contains('cinfo')) loadCompany(d);
   if(d.classList.contains('cnews')) loadNews(d);
+  if(d.classList.contains('cana'))  loadAnalysts(d);
 },true);
 
 /* ============================================================
