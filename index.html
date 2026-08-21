@@ -359,13 +359,37 @@ const PRICEABLE=new Set(['Shares','Shares TASE UP','ETF Fund - Equity','ETF - Bo
    Market data. stockanalysis.com, no key, CORS open.
    TASE prices come back in agorot.
    ============================================================ */
+/* Rate limiting is the binding constraint, not speed. The data source returns
+   HTTP 429 with a Cloudflare challenge if pushed, and once that happens every
+   request fails. So: cache hard, ask for little, and back off on the first refusal. */
+let RATE_LIMITED=false;
 const pxCache=new Map();
+const TTL={quote:20*60*1000, hist:24*60*60*1000, ideas:12*60*60*1000};
+
+async function cacheGet(key,ttl){
+  try{
+    if(!DB.db) return undefined;
+    const v=await DB.get('c:'+key);
+    if(v && (Date.now()-v.at)<ttl) return v.d;
+  }catch(e){}
+  return undefined;
+}
+async function cacheSet(key,d){
+  try{ if(DB.db) await DB.set('c:'+key,{at:Date.now(),d:d}); }catch(e){}
+}
+
 async function quote(id){
-  if(pxCache.has(id))return pxCache.get(id);
+  if(pxCache.has(id)) return pxCache.get(id);
+  const c=await cacheGet('q:'+id,TTL.quote);
+  if(c!==undefined){ pxCache.set(id,c); return c; }
+  if(RATE_LIMITED) return null;
   try{
     const r=await fetch('https://stockanalysis.com/api/quotes/'+id);
+    if(r.status===429){ RATE_LIMITED=true; return null; }
     const j=await r.json();
-    if(j&&j.status===200&&j.data&&typeof j.data.p==='number'){pxCache.set(id,j.data);return j.data;}
+    if(j&&j.status===200&&j.data&&typeof j.data.p==='number'){
+      pxCache.set(id,j.data); await cacheSet('q:'+id,j.data); return j.data;
+    }
   }catch(e){}
   pxCache.set(id,null); return null;
 }
@@ -373,8 +397,12 @@ const histCache=new Map();
 async function history(id,range){
   const k=id+'|'+range;
   if(histCache.has(k)) return histCache.get(k);
+  const c=await cacheGet('h:'+k,TTL.hist);
+  if(c!==undefined){ histCache.set(k,c); return c; }
+  if(RATE_LIMITED) return null;
   const out=await historyFetch(id,range);
-  histCache.set(k,out); return out;
+  histCache.set(k,out); if(out) await cacheSet('h:'+k,out);
+  return out;
 }
 async function historyFetch(id,range){
   try{
@@ -777,7 +805,10 @@ async function renderPortfolio(){
     cards.push({o,rank:o.v?({r:0,a:1,g:2})[o.v.k]:3});
   }
   cards.sort((a,b)=>a.rank-b.rank);
-  H.innerHTML=cards.map(c=>cardHTML(c.o)).join('');
+  H.innerHTML=(RATE_LIMITED
+      ? bannerHTML('b-warn','אתר המחירים חוסם אותנו זמנית מרוב בקשות, ולכן חלק מהניתוחים לא מוצגים. <b>הנתונים מהבנק למטה נכונים ומלאים.</b> נסה שוב בעוד כשעה.')
+      : '')
+    + cards.map(c=>cardHTML(c.o)).join('');
 }
 
 /* ============================================================
@@ -915,38 +946,53 @@ function trend(rows){
 }
 
 let ideasDone=false;
+const dayKey=()=>new Date().toISOString().slice(0,10);
+
 async function renderIdeas(){
   if(ideasDone) return; ideasDone=true;
   const E=document.getElementById('ideas');
   const say=t=>E.innerHTML=`<div class="center" style="padding:26px"><span class="spin"></span><div style="margin-top:12px;font-weight:700">${t}</div></div>`;
-  say('טוען את רשימת המניות…');
 
+  // Already worked out today? Show it instantly and make no requests at all.
+  const cached=await cacheGet('ideas:'+dayKey(),TTL.ideas);
+  if(cached){ E.innerHTML=cached; return; }
+
+  say('טוען את רשימת המניות…');
   try{
     if(!UNIVERSE.length){
       const u=await (await fetch('data/universe.json',{cache:'no-store'})).json();
-      UNIVERSE=u.tase.map(x=>'a/TLV-'+x).concat(u.us.map(x=>'s/'+x.toLowerCase()));
+      // Scan a deliberately small slice. The data source rate-limits hard, and a
+      // wide sweep from a browser gets the whole app blocked for everyone on that
+      // connection. Depth on a few names beats breadth we are not allowed to have.
+      UNIVERSE=u.tase.slice(0,26).map(x=>'a/TLV-'+x)
+              .concat(u.us.slice(0,26).map(x=>'s/'+x.toLowerCase()));
       DUAL=u.dual_listed||{};
     }
   }catch(e){ E.innerHTML=bannerHTML('b-bad','לא הצלחנו לטעון את רשימת המניות.'); ideasDone=false; return; }
 
   // stage 1: today's quote for every name in the universe
-  const quotes=(await mapLimit(UNIVERSE,8,async id=>{
+  const quotes=(await mapLimit(UNIVERSE,3,async id=>{
     const q=await quote(id); if(!q) return null;
     const lo=q.l52,hi=q.h52;
     return {id,q,cp:q.cp,pos:(lo&&hi&&hi>lo)?(q.p-lo)/(hi-lo)*100:null,
             turnover:(q.p||0)*(q.v||0)*(id.startsWith('a/')?0.01:1)};
   },(d,t)=>say(`בודק את השוק… ${d} מתוך ${t}`))).filter(Boolean);
 
-  if(!quotes.length){ E.innerHTML=bannerHTML('b-bad','לא הצלחנו להביא מחירים כרגע. נסה שוב מאוחר יותר.'); ideasDone=false; return; }
+  if(!quotes.length){
+    E.innerHTML = RATE_LIMITED
+      ? bannerHTML('b-warn','אתר הנתונים חוסם אותנו זמנית מרוב בקשות. זו לא תקלה בתיק שלך. נסה שוב בעוד כשעה, והנתונים יחזרו לבד.')
+      : bannerHTML('b-bad','לא הצלחנו להביא מחירים כרגע. בדוק שיש חיבור לאינטרנט ונסה שוב מאוחר יותר.');
+    ideasDone=false; return;
+  }
 
   // quality gate: must actually trade, and must not be a wild mover
   const liquid=quotes.filter(x=>x.turnover>=1e6 && Math.abs(x.cp)<15);
   // most interesting today = biggest absolute move, on real turnover
-  const candidates=liquid.slice().sort((a,b)=>Math.abs(b.cp)-Math.abs(a.cp)).slice(0,14);
+  const candidates=liquid.slice().sort((a,b)=>Math.abs(b.cp)-Math.abs(a.cp)).slice(0,8);
 
   say(`בודק לעומק ${candidates.length} מניות שזזו היום…`);
 
-  const deep=(await mapLimit(candidates,6,async x=>{
+  const deep=(await mapLimit(candidates,2,async x=>{
     const h=await history(x.id,'5Y'); const t=trend(h);
     return t?Object.assign({},x,{t:t,risk:riskLevel(h)}):null;
   })).filter(Boolean);
@@ -971,10 +1017,11 @@ async function renderIdeas(){
       + intro
       + `<div class="card center"><div class="nm">היום אין משהו מיוחד לדווח</div>
          <div class="note">לא נמצאה מניה שעונה על התנאים. זה תקין ולא תקלה. עדיף לא להראות המלצה מאשר להראות משהו חלש.</div></div>`;
+    await cacheSet('ideas:'+dayKey(),E.innerHTML);
     return;
   }
 
-  E.innerHTML = bannerHTML('b-ok','נבדקו <b>'+esc(quotes.length)+'</b> מניות בתל אביב ובנאסד"ק, '+esc(dLong.format(now))+'. נמצאו <b>'+esc(picks.length)+'</b> ששווה להסתכל עליהן.')
+  const html = bannerHTML('b-ok','נבדקו <b>'+esc(quotes.length)+'</b> מניות בתל אביב ובנאסד"ק, '+esc(dLong.format(now))+'. נמצאו <b>'+esc(picks.length)+'</b> ששווה להסתכל עליהן.')
     + intro
     + picks.map(x=>{
         const isUS=x.id.startsWith('s/');
@@ -1005,6 +1052,8 @@ async function renderIdeas(){
         o.customWhy = why;
         return cardHTML(o);
       }).join('');
+  E.innerHTML=html;
+  await cacheSet('ideas:'+dayKey(),html);
 }
 
 /* ============================================================
