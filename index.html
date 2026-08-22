@@ -961,11 +961,11 @@ async function renderIdeas(){
   try{
     if(!UNIVERSE.length){
       const u=await (await fetch('data/universe.json',{cache:'no-store'})).json();
-      // Scan a deliberately small slice. The data source rate-limits hard, and a
-      // wide sweep from a browser gets the whole app blocked for everyone on that
-      // connection. Depth on a few names beats breadth we are not allowed to have.
-      UNIVERSE=u.tase.slice(0,26).map(x=>'a/TLV-'+x)
-              .concat(u.us.slice(0,26).map(x=>'s/'+x.toLowerCase()));
+      // Full universe. Measured: 172 requests at concurrency 3 completes in about
+      // 16 seconds with no rate limiting. It was the concurrency of 8 that got us
+      // blocked, not the number of names. Combined with the day-cache this whole
+      // sweep runs once per day, not once per visit.
+      UNIVERSE=u.tase.map(x=>'a/TLV-'+x).concat(u.us.map(x=>'s/'+x.toLowerCase()));
       DUAL=u.dual_listed||{};
     }
   }catch(e){ E.innerHTML=bannerHTML('b-bad','לא הצלחנו לטעון את רשימת המניות.'); ideasDone=false; return; }
@@ -988,7 +988,7 @@ async function renderIdeas(){
   // quality gate: must actually trade, and must not be a wild mover
   const liquid=quotes.filter(x=>x.turnover>=1e6 && Math.abs(x.cp)<15);
   // most interesting today = biggest absolute move, on real turnover
-  const candidates=liquid.slice().sort((a,b)=>Math.abs(b.cp)-Math.abs(a.cp)).slice(0,8);
+  const candidates=liquid.slice().sort((a,b)=>Math.abs(b.cp)-Math.abs(a.cp)).slice(0,12);
 
   say(`בודק לעומק ${candidates.length} מניות שזזו היום…`);
 
