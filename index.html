@@ -620,6 +620,35 @@ function riskLevel(rows){
    Google News RSS carries no CORS header, so it is read through a public
    proxy. If the proxy is unavailable the news section simply says so and
    nothing else on the card is affected. */
+/* Free public relays are unreliable infrastructure: both known ones were fully
+   down (connection timeouts, not errors) while the underlying sources answered in
+   under a second. So every relay call gets a hard timeout and we try more than one.
+   Without the timeout the browser hangs and the section spins forever. */
+const RELAYS=[
+  u=>'https://api.allorigins.win/raw?url='+encodeURIComponent(u),
+  u=>'https://api.codetabs.com/v1/proxy?quest='+encodeURIComponent(u),
+  u=>'https://api.allorigins.win/get?url='+encodeURIComponent(u)
+];
+async function viaRelay(url,ms){
+  for(let i=0;i<RELAYS.length;i++){
+    const ctl=new AbortController();
+    const timer=setTimeout(()=>ctl.abort(), ms||9000);
+    try{
+      const r=await fetch(RELAYS[i](url),{signal:ctl.signal});
+      clearTimeout(timer);
+      if(!r.ok) continue;
+      let t=await r.text();
+      if(!t || t.length<200) continue;
+      // the /get variant wraps the payload in JSON
+      if(t.charAt(0)==='{' && t.indexOf('"contents"')>-1){
+        try{ t=JSON.parse(t).contents||''; }catch(e){}
+      }
+      if(t && t.length>200) return t;
+    }catch(e){ clearTimeout(timer); }
+  }
+  return null;
+}
+
 const newsCache=new Map();
 async function fetchNews(name,hebrew){
   const key=name+'|'+hebrew;
@@ -630,8 +659,8 @@ async function fetchNews(name,hebrew){
     : 'https://news.google.com/rss/search?q='+q+'&hl=en-US&gl=US&ceid=US:en';
   let out=null;
   try{
-    const r=await fetch('https://api.allorigins.win/raw?url='+encodeURIComponent(feed));
-    const x=await r.text();
+    const x=await viaRelay(feed,9000);
+    if(!x){ newsCache.set(key,null); return null; }
     const doc=new DOMParser().parseFromString(x,'text/xml');
     const items=Array.from(doc.querySelectorAll('item')).slice(0,4).map(it=>({
       title:(it.querySelector('title')||{}).textContent||'',
@@ -644,7 +673,7 @@ async function fetchNews(name,hebrew){
 }
 function newsHTML(items){
   if(!items||!items.length)
-    return '<div class="body">לא נמצאו כתבות עדכניות על המניה הזו כרגע.</div>';
+    return '<div class="body">לא הצלחנו להביא כתבות כרגע. זו תקלה זמנית בשירות החדשות, לא במחשב שלך. שאר הנתונים בעמוד תקינים.</div>';
   return '<ul class="whyul" style="font-size:.82em">'+items.map(n=>{
     let d=''; try{ d=dLong.format(new Date(n.date)); }catch(e){}
     return '<li>'+esc(n.title)+'<br><span style="opacity:.7;font-size:.9em">'+esc(n.src)+(d?' · '+esc(d):'')+'</span></li>';
@@ -666,9 +695,8 @@ async function analysts(id){
   let out={none:'fetch'};
   try{
     const url='https://stockanalysis.com/stocks/'+usSym+'/';
-    const r=await fetch('https://api.allorigins.win/raw?url='+encodeURIComponent(url));
-    const h=await r.text();
-    if(h.length>5000){
+    const h=await viaRelay(url,12000);
+    if(h && h.length>5000){
       const m=h.match(/According to (\d+) analysts, the average rating for \S+ stock is [\\"']*([A-Za-z ]+?)\./);
       const t=h.match(/analystTarget:\{target:"([^"]*)",change:"([^"]*)",changeWord:"([^"]*)"/);
       const c=h.match(/analystChart:\{strongBuy:(\d+),buy:(\d+),hold:(\d+),sell:(\d+),strongSell:(\d+)\}/);
@@ -684,7 +712,7 @@ const RATING_HE={'Strong Buy':'קנייה חזקה','Buy':'קנייה','Hold':'�
 function analystsHTML(a){
   if(!a||a.none==='noUS')
     return '<div class="body">למניה הזו אין כיסוי של אנליסטים בינלאומיים. רוב המניות הנסחרות רק בתל אביב לא מסוקרות על ידי בתי השקעות גדולים בחו"ל.</div>';
-  if(a.none) return '<div class="body">לא הצלחנו להביא את דעות האנליסטים כרגע.</div>';
+  if(a.none) return '<div class="body">שירות המידע על אנליסטים לא זמין כרגע. זו תקלה זמנית אצלם, לא במחשב שלך. נסה שוב מאוחר יותר.</div>';
   const he=RATING_HE[a.rating]||a.rating;
   const b=a.buckets;
   const bars=b?`<ul class="whyul" style="font-size:.82em">
