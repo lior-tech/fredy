@@ -305,6 +305,7 @@ async function loadTase(){
   try{ USNAMES = await (await fetch('data/us_tickers.json')).json(); }catch(e){ USNAMES={}; }
   try{ DUAL = (await (await fetch('data/universe.json')).json()).dual_listed||{}; }catch(e){ DUAL={}; }
   TASE.forEach(t=>{ if(t.sym) HEB_NAME[t.sym.toUpperCase()]=t.he||t.en; });
+  SEARCH_IDX=buildIndex(TASE,PRICEABLE,USNAMES);
 }
 
 /* ============================================================
@@ -351,6 +352,73 @@ function infoHTML(info){
   return `<div class="body">${esc(info.text)}</div>${facts}
     <div class="body" style="margin-top:10px;opacity:.75">המידע מוויקיפדיה בעברית.</div>`;
 }
+
+const STOP_HE=new Set(['בנק','מניית','מניה','חברת','חברה','קבוצת','קבוצה','של','בעמ','בע"מ']);
+const STOP_EN=new Set(['ltd','inc','corp','corporation','group','company','co','plc','the','holdings','industries','sa','nv','class','common','stock','shares']);
+/* Hebrew glues single-letter prefixes onto words: ה, ו, ב, ל, כ, מ, ש.
+   Without stripping them "בנק הפועלים" never matches the listing name "פועלים". */
+function deprefix(w){
+  if(w.length>3 && /^[הובלכמש]/.test(w)) return w.slice(1);
+  return w;
+}
+function toks(s,he){
+  if(!s) return [];
+  const raw=String(s).toLowerCase()
+    .replace(/["'`.,()\-\/]/g,' ')
+    .split(/\s+/).filter(w=>w && !(he?STOP_HE:STOP_EN).has(w));
+  if(!he) return raw;
+  const out=[];
+  for(const w of raw){ out.push(w); const d=deprefix(w); if(d!==w && !STOP_HE.has(d)) out.push(d); }
+  return out;
+}
+/* Query tokens are ALTERNATIVES, not additional requirements: "הפועלים" should
+   match the listing name "פועלים" without also demanding the prefixed form. */
+function qtoks(s,he){
+  const raw=String(s||'').toLowerCase()
+    .replace(/["'`.,()\-\/]/g,' ')
+    .split(/\s+/).filter(w=>w && !(he?STOP_HE:STOP_EN).has(w));
+  return raw.map(w=>{ const d=he?deprefix(w):w; return d!==w?[w,d]:[w]; });
+}
+function buildIndex(TASE,PRICEABLE,USNAMES){
+  const idx=[];
+  for(const t of TASE){
+    if(!PRICEABLE.has(t.sub)||!t.sym) continue;
+    idx.push({id:'a/TLV-'+t.sym, sym:t.sym, label:t.he||t.en, market:'TASE',
+              keys:[...toks(t.he,true),...toks(t.en,false)], symlc:t.sym.toLowerCase()});
+  }
+  for(const k in USNAMES){
+    idx.push({id:'s/'+k.toLowerCase(), sym:k, label:USNAMES[k], market:'US',
+              keys:toks(USNAMES[k],false), symlc:k.toLowerCase()});
+  }
+  return idx;
+}
+function search(idx,q,limit){
+  const raw=String(q||'').trim(); if(raw.length<2) return [];
+  const lc=raw.toLowerCase();
+  const he=/[֐-׿]/.test(raw);
+  const qt=qtoks(raw,he);
+  const flat=qt.map(a=>a[0]);
+  const out=[];
+  for(const e of idx){
+    let s=0;
+    if(e.symlc===lc) s=1000;
+    else if(e.keys.join(' ')===flat.join(' ') && qt.length) s=900;
+    else if(qt.length && qt.every(alts=>alts.some(w=>e.keys.some(k=>k.startsWith(w))))){
+      s=600 - e.keys.length*5;
+      // the word as he actually typed it beats a prefix-stripped guess:
+      // "הראל" should find הראל השקעות, not ראלקו
+      const exact=qt.filter(alts=>e.keys.some(k=>k.startsWith(alts[0]))).length;
+      s+=exact*40;
+    }
+    else if(e.symlc.startsWith(lc) && lc.length>=3) s=400;
+    else if(qt.length===1 && qt[0].some(w=>w.length>=3 && e.keys.some(k=>k.includes(w)))) s=200 - e.keys.length*5;
+    if(s>0){ if(e.market==='TASE'&&he) s+=30; if(e.market==='US'&&!he) s+=30; out.push({e,s}); }
+  }
+  out.sort((a,b)=>b.s-a.s || a.e.label.length-b.e.label.length);
+  return out.slice(0,limit||8).map(x=>x.e);
+}
+
+let SEARCH_IDX=[];
 
 /* which instruments can actually be priced */
 const PRICEABLE=new Set(['Shares','Shares TASE UP','ETF Fund - Equity','ETF - Bonds','Foreign ETF - Equity','Foreign ETF - Bonds']);
@@ -516,18 +584,18 @@ function verdict(price,lo,hi){
   if(lo==null||hi==null||hi<=lo)return null;
   const pos=(price-lo)/(hi-lo), pp=Math.round(pos*100);
   const base={pos:pp,lo:lo,hi:hi,price:price};
-  if(pos>=0.85) return Object.assign(base,{k:'r',cls:'r',bg:'bg-r',txt:'לשקול למכור',
+  if(pos>=0.85) return Object.assign(base,{k:'r',cls:'r',bg:'bg-r',txt:'כדאי לשקול מכירה',
     headline:'המחיר קרוב מאוד לשיא של השנה האחרונה.',
     rule:'הכלל: כשהמחיר נמצא מעל 85% מהטווח השנתי, זו נקודה ששווה לשים לב אליה.',
     caveat:'זה לא אומר שהמחיר ימשיך לרדת. זו לא תחזית.'});
-  if(pos<=0.20) return Object.assign(base,{k:'g',cls:'g',bg:'bg-g',txt:'לשקול להוסיף',
+  if(pos<=0.20) return Object.assign(base,{k:'g',cls:'g',bg:'bg-g',txt:'כדאי לשקול קנייה',
     headline:'המחיר קרוב לתחתית של השנה האחרונה.',
     rule:'הכלל: כשהמחיר נמצא מתחת ל-20% מהטווח השנתי, הנייר זול יחסית לעצמו.',
     caveat:'זה לא אומר שהמחיר יעלה. לפעמים מחיר יורד מסיבה טובה.'});
-  return Object.assign(base,{k:'a',cls:'a',bg:'bg-a',txt:'להחזיק ולעקוב',
-    headline:'המחיר נמצא באמצע הטווח של השנה האחרונה.',
-    rule:'הכלל: בין 20% ל-85% מהטווח השנתי אין סיבה מיוחדת לפעולה.',
-    caveat:'אין כאן סימן לכאן או לכאן.'});
+  // Fredy asked for buy or sell only. When the price is mid-range there is no
+  // recommendation, and the card says exactly that rather than inventing a
+  // third option dressed up as advice.
+  return null;
 }
 
 /* Risk level, from how much the share actually moves on an average day.
@@ -676,7 +744,7 @@ function cardHTML(o){
   const v=o.v||null;
   const cls=v?v.cls:'';
   const badge=(v?`<span class="badge ${v.bg}">${esc(v.txt)}</span>`
-                :`<span class="badge bg-n">אין ניתוח מחיר</span>`)
+                :`<span class="badge bg-n">${o.priceNow!=null?'אין המלצה כרגע':'אין ניתוח מחיר'}</span>`)
         +(o.risk?`<span class="badge ${o.risk.bg}" style="margin-inline-start:8px">${esc(o.risk.txt)}</span>`:'');
   let cells='';
   if(o.qty!=null)      cells+=`<div class="cell"><div class="k">כמות</div><div class="v num">${esc(nfNum.format(o.qty))}</div></div>`;
@@ -703,7 +771,15 @@ function cardHTML(o){
 
   const note = o.customWhy ? o.customWhy
              : v ? whyHTML(v,o.cur)
-             : `<div class="note">${esc(o.reason||'ניתוח מחירים לא זמין לנייר הזה.')}</div>`;
+             : (o.priceNow!=null && o.lo!=null && o.hi!=null)
+               ? `<div class="why"><div class="whyh">אין המלצה כרגע</div>
+                  <div class="whyl">המחיר נמצא באמצע הטווח של השנה האחרונה, ולכן אין סיבה לקנות או למכור.</div>
+                  <ul class="whyul">
+                    <li>המחיר היום: <b class="num">${esc(nfNum.format(o.priceNow))}</b></li>
+                    <li>הטווח בשנה האחרונה: <b class="num">${esc(nfNum.format(o.lo))}</b> עד <b class="num">${esc(nfNum.format(o.hi))}</b></li>
+                  </ul>
+                  <div class="whyr">המלצה תופיע רק כשהמחיר יתקרב לתחתית הטווח (קנייה) או לשיא (מכירה).</div></div>`
+               : `<div class="note">${esc(o.reason||'ניתוח מחירים לא זמין לנייר הזה.')}</div>`;
 
   return `<div class="card ${cls}">
     <div class="cardhead">
@@ -1060,21 +1136,19 @@ async function renderIdeas(){
    Check a stock
    ============================================================ */
 document.getElementById('q').addEventListener('input',e=>{
-  const v=e.target.value.trim(); const S=document.getElementById('sugg');
-  if(v.length<2){S.innerHTML='';return;}
-  const lv=v.toLowerCase();
-  const hits=TASE.filter(t=>PRICEABLE.has(t.sub)&&((t.he&&t.he.includes(v))||(t.en&&t.en.toLowerCase().includes(lv))||(t.sym&&t.sym.toLowerCase().startsWith(lv)))).slice(0,6);
-  S.innerHTML=hits.length?`<div class="sugg">${hits.map(h=>`<button data-id="a/TLV-${esc(h.sym)}" data-nm="${esc(h.he||h.en)}">${esc(h.he||h.en)} <span class="tkr" style="color:#3d4a58">${esc(h.sym)}</span></button>`).join('')}</div>`:'';
+  const S=document.getElementById('sugg');
+  const hits=search(SEARCH_IDX, e.target.value, 6);
+  S.innerHTML = hits.length
+    ? `<div class="sugg">${hits.map(h=>`<button data-id="${esc(h.id)}" data-nm="${esc(h.label)}">${esc(h.label)} <span class="tkr" style="color:#3d4a58">${esc(h.sym)}</span> <span style="opacity:.6;font-size:.85em">${h.market==='US'?'נאסד"ק':'תל אביב'}</span></button>`).join('')}</div>`
+    : '';
   S.querySelectorAll('button').forEach(b=>b.onclick=()=>{S.innerHTML='';checkStock(b.dataset.id,b.dataset.nm);});
 });
 document.getElementById('go').onclick=()=>{
   const v=document.getElementById('q').value.trim(); if(!v)return;
   document.getElementById('sugg').innerHTML='';
-  if(/^[A-Za-z.\-]{1,6}$/.test(v)) return checkStock('s/'+v.toLowerCase(),v.toUpperCase());
-  const lv=v.toLowerCase();
-  const h=TASE.find(t=>PRICEABLE.has(t.sub)&&((t.he&&t.he.includes(v))||(t.en&&t.en.toLowerCase()===lv)||(t.sym&&t.sym.toLowerCase()===lv)));
-  if(h)return checkStock('a/TLV-'+h.sym,h.he||h.en);
-  document.getElementById('result').innerHTML=`<div class="card"><div class="note">לא מצאנו נייר בשם הזה. נסה להקליד את הסימבול, לדוגמה AAPL.</div></div>`;
+  const hits=search(SEARCH_IDX,v,1);
+  if(hits.length) return checkStock(hits[0].id,hits[0].label);
+  document.getElementById('result').innerHTML=`<div class="card"><div class="note">לא מצאנו מניה בשם הזה. נסה להקליד רק את השם, לדוגמה <b>טבע</b> או <b>Apple</b>, ובחר מהרשימה שתופיע.</div></div>`;
 };
 async function checkStock(id,nm){
   const R=document.getElementById('result');
