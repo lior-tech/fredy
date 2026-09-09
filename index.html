@@ -83,6 +83,7 @@ nav.tabs button[aria-selected="true"]{background:#12283d;color:#fff;border-color
 .bg-r{background:var(--redbg);color:var(--red);border-color:#e0949c}
 .bg-a{background:var(--amberbg);color:var(--amber);border-color:#e0b968}
 .bg-n{background:#eef1f4;color:var(--ink2);border-color:var(--line)}
+.bg-sp{background:#12283d;color:#fff;border-color:#12283d;direction:ltr;unicode-bidi:isolate}
 .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-top:16px}
 .cell{background:#f7f9fb;border-radius:14px;padding:12px 14px}
 .cell .k{color:var(--ink2);font-size:.72em;font-weight:700}
@@ -303,7 +304,7 @@ async function loadTase(){
     }
   }catch(e){ console.warn('tase master failed',e); }
   try{ USNAMES = await (await fetch('data/us_tickers.json')).json(); }catch(e){ USNAMES={}; }
-  try{ DUAL = (await (await fetch('data/universe.json')).json()).dual_listed||{}; }catch(e){ DUAL={}; }
+  try{ const _u=await (await fetch('data/universe.json')).json(); DUAL=_u.dual_listed||{}; SP500=new Set((_u.sp500||[]).map(x=>x.toUpperCase())); }catch(e){ DUAL={}; }
   TASE.forEach(t=>{ if(t.sym) HEB_NAME[t.sym.toUpperCase()]=t.he||t.en; });
   SEARCH_IDX=buildIndex(TASE,PRICEABLE,USNAMES);
 }
@@ -580,170 +581,166 @@ function resolve(rec){
 /* ============================================================
    Verdict. Rule based and stated openly. No prediction.
    ============================================================ */
-function verdict(price,lo,hi){
-  if(lo==null||hi==null||hi<=lo)return null;
-  const pos=(price-lo)/(hi-lo), pp=Math.round(pos*100);
-  const base={pos:pp,lo:lo,hi:hi,price:price};
-  if(pos>=0.85) return Object.assign(base,{k:'r',cls:'r',bg:'bg-r',txt:'כדאי לשקול מכירה',
-    headline:'המחיר קרוב מאוד לשיא של השנה האחרונה.',
-    rule:'הכלל: כשהמחיר נמצא מעל 85% מהטווח השנתי, זו נקודה ששווה לשים לב אליה.',
-    caveat:'זה לא אומר שהמחיר ימשיך לרדת. זו לא תחזית.'});
-  if(pos<=0.20) return Object.assign(base,{k:'g',cls:'g',bg:'bg-g',txt:'כדאי לשקול קנייה',
-    headline:'המחיר קרוב לתחתית של השנה האחרונה.',
-    rule:'הכלל: כשהמחיר נמצא מתחת ל-20% מהטווח השנתי, הנייר זול יחסית לעצמו.',
-    caveat:'זה לא אומר שהמחיר יעלה. לפעמים מחיר יורד מסיבה טובה.'});
-  // Fredy asked for buy or sell only. When the price is mid-range there is no
-  // recommendation, and the card says exactly that rather than inventing a
-  // third option dressed up as advice.
-  return null;
-}
-
-/* Risk level, from how much the share actually moves on an average day.
-   Thresholds calibrated on the measured distribution across the universe:
-   median 1.69%/day, 25th percentile 1.42%, 75th percentile 2.50%. */
-function riskLevel(rows){
-  if(!rows||rows.length<40) return null;
-  const r=rows.slice().sort((a,b)=>a.t<b.t?-1:1).slice(-60);
+/* ============================================================
+   Multi-factor analysis.
+   A single 52-week range is far too thin to justify telling an
+   80-year-old to buy or sell. Every measure below is computed from
+   five years of daily adjusted closes and volumes, and every one of
+   them is shown on the card so he can see what the call rests on.
+   ============================================================ */
+function analyze(rows,q){
+  if(!rows||rows.length<260||!q) return null;
+  const r=rows.slice().sort((a,b)=>a.t<b.t?-1:1);
+  const fLast=(r[r.length-1].a&&r[r.length-1].c)?(r[r.length-1].a/r[r.length-1].c):1;
   const c=r.map(x=>x.a!=null?x.a:x.c);
-  const mv=[]; for(let i=1;i<c.length;i++) if(c[i-1]) mv.push(Math.abs(c[i]/c[i-1]-1)*100);
-  if(mv.length<40) return null;
-  const avg=mv.reduce((a,b)=>a+b,0)/mv.length;
-  if(avg<1.5)  return {k:'low', txt:'סיכון נמוך', bg:'bg-g', avg:avg,
-    why:'המניה זזה בממוצע '+nfNum.format(avg)+'% ביום. זו תנודתיות נמוכה יחסית.'};
-  if(avg<2.8)  return {k:'mid', txt:'סיכון בינוני', bg:'bg-a', avg:avg,
-    why:'המניה זזה בממוצע '+nfNum.format(avg)+'% ביום. זה טווח רגיל למניה גדולה.'};
-  return {k:'high', txt:'סיכון גבוה', bg:'bg-r', avg:avg,
-    why:'המניה זזה בממוצע '+nfNum.format(avg)+'% ביום. זו מניה תנודתית, המחיר יכול לקפוץ ולצנוח מהר.'};
+  const v=r.map(x=>{const f=(x.a&&x.c)?x.a/x.c:1; return (x.v||0)*(f/fLast);});
+  const h=r.map(x=>{const f=(x.a&&x.c)?x.a/x.c:1; return (x.h||x.c)*f;});
+  const ma=(a,n)=>a.length>=n?a.slice(-n).reduce((x,y)=>x+y,0)/n:null;
+  const last=c[c.length-1];
+  const px=(typeof q.p==='number')?q.p:last;
+  const scale=last?px/last:1;              // keep history and the live quote consistent
+  const ma50=ma(c,50)*scale, ma200=ma(c,200)*scale;
+  const hi3m=Math.max.apply(null,h.slice(-66))*scale;
+  const hi1m=Math.max.apply(null,h.slice(-22))*scale;
+  const vol5=ma(v,5), vol60=ma(v,60);
+  const mv=[]; for(let i=c.length-60;i<c.length;i++) if(i>0&&c[i-1]) mv.push(Math.abs(c[i]/c[i-1]-1)*100);
+  const M={
+    px:px,
+    lo52:q.l52, hi52:q.h52,
+    pos52:(q.l52!=null&&q.h52!=null&&q.h52>q.l52)?((px-q.l52)/(q.h52-q.l52)*100):null,
+    ma50:ma50, ma200:ma200,
+    vs50:ma50?((px/ma50-1)*100):null,
+    vs200:ma200?((px/ma200-1)*100):null,
+    goldencross:(ma50&&ma200)?(ma50>ma200):null,
+    r1m:c.length>22?(c[c.length-1]/c[c.length-23]-1)*100:null,
+    r3m:c.length>66?(c[c.length-1]/c[c.length-67]-1)*100:null,
+    r6m:c.length>132?(c[c.length-1]/c[c.length-133]-1)*100:null,
+    r12m:c.length>250?(c[c.length-1]/c[c.length-251]-1)*100:null,
+    fromHi3m:hi3m?((px/hi3m-1)*100):null,
+    fromHi1m:hi1m?((px/hi1m-1)*100):null,
+    volRatio:(vol5&&vol60)?vol5/vol60:null,
+    dailyMove:mv.length?mv.reduce((a,b)=>a+b,0)/mv.length:null
+  };
+  return M;
 }
 
-/* Recent news, in Hebrew for Tel Aviv and English for the US.
-   Google News RSS carries no CORS header, so it is read through a public
-   proxy. If the proxy is unavailable the news section simply says so and
-   nothing else on the card is affected. */
-/* Free public relays are unreliable infrastructure: both known ones were fully
-   down (connection timeouts, not errors) while the underlying sources answered in
-   under a second. So every relay call gets a hard timeout and we try more than one.
-   Without the timeout the browser hangs and the section spins forever. */
-const RELAYS=[
-  u=>'https://api.allorigins.win/raw?url='+encodeURIComponent(u),
-  u=>'https://api.codetabs.com/v1/proxy?quest='+encodeURIComponent(u),
-  u=>'https://api.allorigins.win/get?url='+encodeURIComponent(u)
-];
-async function viaRelay(url,ms){
-  for(let i=0;i<RELAYS.length;i++){
-    const ctl=new AbortController();
-    const timer=setTimeout(()=>ctl.abort(), ms||9000);
-    try{
-      const r=await fetch(RELAYS[i](url),{signal:ctl.signal});
-      clearTimeout(timer);
-      if(!r.ok) continue;
-      let t=await r.text();
-      if(!t || t.length<200) continue;
-      // the /get variant wraps the payload in JSON
-      if(t.charAt(0)==='{' && t.indexOf('"contents"')>-1){
-        try{ t=JSON.parse(t).contents||''; }catch(e){}
-      }
-      if(t && t.length>200) return t;
-    }catch(e){ clearTimeout(timer); }
-  }
+/* Targets from the measures rather than from the yearly range alone.
+   The sell level is the nearer of the recent high and a sensible stretch above
+   the long-term average; the buy level is where the stock has actually found
+   support lately, not an arbitrary fraction of a 52-week band. */
+function targetsFrom(M){
+  if(!M||M.px==null) return null;
+  const cand=[];
+  if(M.hi52!=null) cand.push(M.hi52);
+  if(M.ma200!=null) cand.push(M.ma200*1.25);
+  if(M.px!=null && M.fromHi3m!=null && M.fromHi3m<0) cand.push(M.px/(1+M.fromHi3m/100));
+  const sell=cand.length?Math.max(M.px*1.05, Math.min.apply(null,cand.filter(x=>x>M.px*1.02))||Math.max.apply(null,cand)):null;
+  const bcand=[];
+  if(M.ma50!=null) bcand.push(M.ma50);
+  if(M.ma200!=null) bcand.push(M.ma200);
+  if(M.lo52!=null&&M.hi52!=null) bcand.push(M.lo52+(M.hi52-M.lo52)*0.25);
+  const below=bcand.filter(x=>x<M.px*0.995);
+  const buy=below.length?Math.max.apply(null,below):(M.px*0.95);
+  return {sell:sell||M.px*1.15, buy:buy,
+          sellLabel:'מחיר יעד למכירה', buyLabel:'מחיר טוב לקנייה'};
+}
+
+/* Buy or sell only, and only when several independent measures agree.
+   Two distinct sell cases are kept apart because they mean opposite things:
+   one is taking profit after a run, the other is a broken trend. */
+function verdict(M){
+  if(!M) return null;
+  const reasons=[];
+  const has=x=>x!=null;
+
+  // --- BUY: the long trend is intact, momentum is positive, and it is not expensive yet
+  let buy=0;
+  if(has(M.vs200) && M.vs200>0){ buy++; reasons.push(['b','המחיר מעל הממוצע של 200 יום, כלומר המגמה ארוכת הטווח חיובית']); }
+  if(M.goldencross===true){ buy++; reasons.push(['b','הממוצע של 50 יום מעל זה של 200 יום, סימן למגמה עולה']); }
+  if(has(M.r3m) && M.r3m>0){ buy++; reasons.push(['b','המניה עלתה בשלושת החודשים האחרונים']); }
+  if(has(M.pos52) && M.pos52<70){ buy++; reasons.push(['b','המחיר עדיין לא בשיא של השנה, יש מקום לעלייה']); }
+  if(has(M.fromHi3m) && M.fromHi3m<=-4 && M.fromHi3m>=-18){ buy++; reasons.push(['b','המחיר ירד מעט מהשיא האחרון, נקודת כניסה סבירה בתוך מגמה עולה']); }
+
+  // --- SELL A: extended after a run
+  let sellA=0;
+  if(has(M.pos52) && M.pos52>=88){ sellA++; }
+  if(has(M.vs50) && M.vs50>=10){ sellA++; }
+  if(has(M.r3m) && M.r3m>=25){ sellA++; }
+
+  // --- SELL B: the long trend has broken
+  let sellB=0;
+  if(has(M.vs200) && M.vs200<0){ sellB++; }
+  if(M.goldencross===false){ sellB++; }
+  if(has(M.r3m) && M.r3m<=-10){ sellB++; }
+  if(has(M.fromHi3m) && M.fromHi3m<=-20){ sellB++; }
+
+  if(buy>=4 && sellB<=1)
+    return {k:'buy',cls:'g',bg:'bg-g',txt:'כדאי לשקול קנייה',
+      headline:'כמה מדדים שונים מצביעים לאותו כיוון חיובי.',
+      reasons:reasons.filter(x=>x[0]==='b').map(x=>x[1]),
+      score:buy, of:5,
+      caveat:'זה לא אומר שהמחיר יעלה. מדובר בחישוב מנתוני מסחר בלבד.'};
+
+  if(sellB>=3)
+    return {k:'sell',cls:'r',bg:'bg-r',txt:'כדאי לשקול מכירה',
+      headline:'המגמה ארוכת הטווח של המניה נשברה.',
+      reasons:[
+        M.vs200<0?'המחיר ירד מתחת לממוצע של 200 יום':null,
+        M.goldencross===false?'הממוצע של 50 יום ירד מתחת לזה של 200 יום':null,
+        (M.r3m!=null&&M.r3m<=-10)?('המניה ירדה '+nfNum.format(Math.abs(M.r3m))+'% בשלושה חודשים'):null,
+        (M.fromHi3m!=null&&M.fromHi3m<=-20)?('המחיר '+nfNum.format(Math.abs(M.fromHi3m))+'% מתחת לשיא האחרון'):null
+      ].filter(Boolean),
+      score:sellB, of:4,
+      caveat:'ירידה אינה בהכרח סיבה למכור. לפעמים דווקא כאן המחיר מתאושש.'};
+
+  if(sellA>=3)
+    return {k:'sell',cls:'r',bg:'bg-r',txt:'כדאי לשקול מכירה',
+      headline:'המניה עלתה הרבה ונמצאת גבוה מאוד ביחס לעצמה.',
+      reasons:[
+        'המחיר ב־'+nfNum.format(M.pos52)+'% מהטווח של השנה האחרונה',
+        'המחיר '+nfNum.format(M.vs50)+'% מעל הממוצע של 50 יום',
+        (M.r3m!=null?('עלייה של '+nfNum.format(M.r3m)+'% בשלושה חודשים'):null)
+      ].filter(Boolean),
+      score:sellA, of:3,
+      caveat:'מניה שעלתה יכולה להמשיך לעלות. זו אינה תחזית.'};
+
   return null;
 }
 
-const newsCache=new Map();
-async function fetchNews(name,hebrew){
-  const key=name+'|'+hebrew;
-  if(newsCache.has(key)) return newsCache.get(key);
-  const q=encodeURIComponent(name+(hebrew?' מניה':' stock'));
-  const feed=hebrew
-    ? 'https://news.google.com/rss/search?q='+q+'&hl=he&gl=IL&ceid=IL:he'
-    : 'https://news.google.com/rss/search?q='+q+'&hl=en-US&gl=US&ceid=US:en';
-  let out=null;
-  try{
-    const x=await viaRelay(feed,9000);
-    if(!x){ newsCache.set(key,null); return null; }
-    const doc=new DOMParser().parseFromString(x,'text/xml');
-    const items=Array.from(doc.querySelectorAll('item')).slice(0,4).map(it=>({
-      title:(it.querySelector('title')||{}).textContent||'',
-      date:(it.querySelector('pubDate')||{}).textContent||'',
-      src:(it.querySelector('source')||{}).textContent||''
-    })).filter(n=>n.title);
-    if(items.length) out=items;
-  }catch(e){}
-  newsCache.set(key,out); return out;
-}
-function newsHTML(items){
-  if(!items||!items.length)
-    return '<div class="body">לא הצלחנו להביא כתבות כרגע. זו תקלה זמנית בשירות החדשות, לא במחשב שלך. שאר הנתונים בעמוד תקינים.</div>';
-  return '<ul class="whyul" style="font-size:.82em">'+items.map(n=>{
-    let d=''; try{ d=dLong.format(new Date(n.date)); }catch(e){}
-    return '<li>'+esc(n.title)+'<br><span style="opacity:.7;font-size:.9em">'+esc(n.src)+(d?' · '+esc(d):'')+'</span></li>';
-  }).join('')+'</ul><div class="body" style="margin-top:8px;opacity:.75">כותרות מ־Google News. אנחנו לא בודקים את התוכן שלהן.</div>';
+/* The full measure sheet, always shown, so the call is never a black box. */
+function measuresHTML(M,cur){
+  if(!M) return '';
+  const u=cur==='USD'?'$':'₪';
+  const row=(k,v,cls)=>`<div class="cell"><div class="k">${esc(k)}</div><div class="v num ${cls||''}">${v}</div></div>`;
+  const sgn=x=>x==null?'-':(x>=0?'pos':'neg');
+  const pc=x=>x==null?'-':nfPct.format(x/100);
+  return `<div class="why">
+    <div class="whyh">מה נמדד</div>
+    <div class="grid">
+      ${row('מיקום בטווח השנה', M.pos52!=null?nfNum.format(M.pos52)+'%':'-')}
+      ${row('מול ממוצע 200 יום', pc(M.vs200), sgn(M.vs200))}
+      ${row('מול ממוצע 50 יום', pc(M.vs50), sgn(M.vs50))}
+      ${row('שינוי בחודש', pc(M.r1m), sgn(M.r1m))}
+      ${row('שינוי ב־3 חודשים', pc(M.r3m), sgn(M.r3m))}
+      ${row('שינוי בשנה', pc(M.r12m), sgn(M.r12m))}
+      ${row('מרחק מהשיא האחרון', pc(M.fromHi3m), sgn(M.fromHi3m))}
+      ${row('מחזור מול הרגיל', M.volRatio!=null?nfNum.format(M.volRatio)+'x':'-')}
+      ${row('תנודתיות יומית', M.dailyMove!=null?nfNum.format(M.dailyMove)+'%':'-')}
+    </div>
+  </div>`;
 }
 
-/* Professional analyst consensus: how many banks and research houses cover the
-   share, what they collectively rate it, and their average 12-month price target.
-   Read through the CORS proxy because the source blocks direct browser access.
-   Israeli shares only have coverage where the company is also listed in the US. */
-let DUAL={};
-const anaCache=new Map();
-async function analysts(id){
-  let usSym=null;
-  if(id.startsWith('s/')) usSym=id.slice(2).toLowerCase();
-  else { const t=id.replace('a/TLV-','').toUpperCase(); if(DUAL[t]) usSym=DUAL[t]; }
-  if(!usSym) return {none:'noUS'};
-  if(anaCache.has(usSym)) return anaCache.get(usSym);
-  let out={none:'fetch'};
-  try{
-    const url='https://stockanalysis.com/stocks/'+usSym+'/';
-    const h=await viaRelay(url,12000);
-    if(h && h.length>5000){
-      const m=h.match(/According to (\d+) analysts, the average rating for \S+ stock is [\\"']*([A-Za-z ]+?)\./);
-      const t=h.match(/analystTarget:\{target:"([^"]*)",change:"([^"]*)",changeWord:"([^"]*)"/);
-      const c=h.match(/analystChart:\{strongBuy:(\d+),buy:(\d+),hold:(\d+),sell:(\d+),strongSell:(\d+)\}/);
-      if(m) out={n:+m[1], rating:m[2].trim(),
-                 target:t?t[1]:null, change:t?t[2]:null, dir:t?t[3]:null,
-                 buckets:c?{sb:+c[1],b:+c[2],h:+c[3],s:+c[4],ss:+c[5]}:null};
-      else out={none:'nocover'};
-    }
-  }catch(e){}
-  anaCache.set(usSym,out); return out;
-}
-const RATING_HE={'Strong Buy':'קנייה חזקה','Buy':'קנייה','Hold':'החזקה','Sell':'מכירה','Strong Sell':'מכירה חזקה'};
-function analystsHTML(a){
-  if(!a||a.none==='noUS')
-    return '<div class="body">למניה הזו אין כיסוי של אנליסטים בינלאומיים. רוב המניות הנסחרות רק בתל אביב לא מסוקרות על ידי בתי השקעות גדולים בחו"ל.</div>';
-  if(a.none) return '<div class="body">שירות המידע על אנליסטים לא זמין כרגע. זו תקלה זמנית אצלם, לא במחשב שלך. נסה שוב מאוחר יותר.</div>';
-  const he=RATING_HE[a.rating]||a.rating;
-  const b=a.buckets;
-  const bars=b?`<ul class="whyul" style="font-size:.82em">
-      <li>ממליצים לקנות: <b class="num">${b.sb+b.b}</b></li>
-      <li>ממליצים להחזיק: <b class="num">${b.h}</b></li>
-      <li>ממליצים למכור: <b class="num">${b.s+b.ss}</b></li></ul>`:'';
-  return `<div class="body"><b>${esc(a.n)}</b> אנליסטים מסקרים את המניה. הדירוג הממוצע שלהם: <b>${esc(he)}</b>.</div>
-    ${bars}
-    ${a.target?`<div class="body" style="margin-top:8px">מחיר היעד הממוצע שלהם ל־12 החודשים הקרובים: <b class="num">${esc(a.target)}</b>${a.change?' ('+esc(a.change)+')':''}.</div>`:''}
-    <div class="whyc" style="margin-top:10px">⚠ אלה דעות של אנליסטים בבתי השקעות, לא עובדות. הם טועים לא מעט, ולעיתים יש להם אינטרס.</div>
-    <div class="body" style="margin-top:6px;opacity:.75">מקור: stockanalysis.com${a.viaUS?', לפי הרישום בארה"ב':''}</div>`;
-}
-
-/* The reasoning box. Shows the actual numbers the decision was made from,
-   the rule that was applied, and an explicit reminder that it is a mechanical
-   rule and not a prediction. Always visible, never hidden behind a click. */
 function whyHTML(v,cur){
   if(!v) return '';
-  const u=cur==='USD'?' $':' אג׳';
   return `<div class="why">
     <div class="whyh">למה ההמלצה הזו?</div>
     <div class="whyl">${esc(v.headline)}</div>
-    <ul class="whyul">
-      <li>המחיר היום: <b class="num">${esc(nfNum.format(v.price))}</b>${esc(u)}</li>
-      <li>הטווח בשנה האחרונה: <b class="num">${esc(nfNum.format(v.lo))}</b> עד <b class="num">${esc(nfNum.format(v.hi))}</b></li>
-      <li>המחיר נמצא ב־<b class="num">${esc(v.pos)}%</b> מהטווח הזה</li>
-    </ul>
-    <div class="whyr">${esc(v.rule)}</div>
-    <div class="whyc">⚠ ${esc(v.caveat)} זהו חישוב אוטומטי לפי כלל קבוע, לא ייעוץ.</div>
+    <ul class="whyul">${v.reasons.map(r=>'<li>'+esc(r)+'</li>').join('')}</ul>
+    <div class="whyr">התקיימו ${esc(v.score)} מתוך ${esc(v.of)} התנאים.</div>
+    <div class="whyc">⚠ ${esc(v.caveat)} זהו חישוב אוטומטי, לא ייעוץ.</div>
   </div>`;
 }
+
 
 /* Where every number on the card came from, with its date. */
 function sourcesHTML(list){
@@ -773,7 +770,8 @@ function cardHTML(o){
   const cls=v?v.cls:'';
   const badge=(v?`<span class="badge ${v.bg}">${esc(v.txt)}</span>`
                 :`<span class="badge bg-n">${o.priceNow!=null?'אין המלצה כרגע':'אין ניתוח מחיר'}</span>`)
-        +(o.risk?`<span class="badge ${o.risk.bg}" style="margin-inline-start:8px">${esc(o.risk.txt)}</span>`:'');
+        +(o.risk?`<span class="badge ${o.risk.bg}" style="margin-inline-start:8px">${esc(o.risk.txt)}</span>`:'')
+        +(o.sp500?`<span class="badge bg-sp" style="margin-inline-start:8px">S&P 500</span>`:'');
   let cells='';
   if(o.qty!=null)      cells+=`<div class="cell"><div class="k">כמות</div><div class="v num">${esc(nfNum.format(o.qty))}</div></div>`;
   if(o.valueILS!=null) cells+=`<div class="cell"><div class="k">שווי</div><div class="v num">${esc(money(o.valueILS,'ILS'))}</div></div>`;
@@ -790,9 +788,10 @@ function cardHTML(o){
   let extra='';
   if(o.lo!=null&&o.hi!=null&&o.priceNow!=null) extra+=rangeBar(o.priceNow,o.lo,o.hi);
   if(o.targets) extra+=`<div class="grid">
-      <div class="cell"><div class="k">מחיר יעד למכירה</div><div class="v num">${esc(nfNum.format(o.targets.sell))}</div></div>
-      <div class="cell"><div class="k">מחיר טוב לקנייה נוספת</div><div class="v num">${esc(nfNum.format(o.targets.buy))}</div></div>
+      <div class="cell"><div class="k">${esc(o.targets.sellLabel||'מחיר יעד למכירה')}</div><div class="v num">${esc(nfNum.format(o.targets.sell))}</div></div>
+      <div class="cell"><div class="k">${esc(o.targets.buyLabel||'מחיר טוב לקנייה')}</div><div class="v num">${esc(nfNum.format(o.targets.buy))}</div></div>
     </div>`;
+  if(o.M) extra+=measuresHTML(o.M,o.cur);
   if(o.yields) extra+=`<div class="grid">
       ${o.yields.map(y=>`<div class="cell"><div class="k">${esc(y[0])}</div><div class="v num ${y[1]>=0?'pos':'neg'}">${esc(pct(y[1]))}</div></div>`).join('')}
     </div>`;
@@ -877,11 +876,12 @@ async function renderPortfolio(){
       if(q){
         const hh=await history(res.id,'5Y');
         o.risk=riskLevel(hh);
+        o.M=analyze(hh,q);
         o.priceNow=q.p; o.cur=(res.market==='US')?'USD':'ILS';
         o.lo=q.l52; o.hi=q.h52;
-        o.v=verdict(q.p,q.l52,q.h52);
+        o.v=verdict(o.M);
         if(o.lo!=null&&o.hi!=null){
-          o.targets={sell:o.hi,buy:o.lo+(o.hi-o.lo)*0.2};
+          o.targets=targetsFrom(o.M);
         }
         o.sources=[
           ['מחיר ושיא ושפל שנתי','אתר stockanalysis.com, בבורסת '+(q.ex||'')+', נכון ל־'+srcTime(q)],
@@ -906,6 +906,7 @@ async function renderPortfolio(){
     else if(res.meta)          o.companyName = res.meta.he || res.meta.en || r.name;
     if(o.companyName){ o.newsName=o.companyName; o.newsHe=(res.market!=='US'); }
     if(res.id) o.anaId=res.id;
+    if(res.market==='US'&&res.sym) o.sp500=SP500.has(res.sym.toUpperCase());
     cards.push({o,rank:o.v?({r:0,a:1,g:2})[o.v.k]:3});
   }
   cards.sort((a,b)=>a.rank-b.rank);
@@ -1049,33 +1050,36 @@ function trend(rows){
   return {px:px,r1m:r1m,r3m:r3m,ma200:ma200,volr:(vol5&&vol60)?vol5/vol60:null,hi3m:hi3m,sig:sig};
 }
 
-let ideasDone=false;
+let ideasDone=false, SP500=new Set();
 const dayKey=()=>new Date().toISOString().slice(0,10);
+const dayNum=()=>Math.floor(Date.now()/86400000);
 
 async function renderIdeas(){
   if(ideasDone) return; ideasDone=true;
   const E=document.getElementById('ideas');
   const say=t=>E.innerHTML=`<div class="center" style="padding:26px"><span class="spin"></span><div style="margin-top:12px;font-weight:700">${t}</div></div>`;
 
-  // Already worked out today? Show it instantly and make no requests at all.
   const cached=await cacheGet('ideas:'+dayKey(),TTL.ideas);
   if(cached){ E.innerHTML=cached; return; }
 
   say('טוען את רשימת המניות…');
+  let u=null;
   try{
-    if(!UNIVERSE.length){
-      const u=await (await fetch('data/universe.json',{cache:'no-store'})).json();
-      // Full universe. Measured: 172 requests at concurrency 3 completes in about
-      // 16 seconds with no rate limiting. It was the concurrency of 8 that got us
-      // blocked, not the number of names. Combined with the day-cache this whole
-      // sweep runs once per day, not once per visit.
-      UNIVERSE=u.tase.map(x=>'a/TLV-'+x).concat(u.us.map(x=>'s/'+x.toLowerCase()));
-      DUAL=u.dual_listed||{};
-    }
+    u=await (await fetch('data/universe.json',{cache:'no-store'})).json();
+    DUAL=u.dual_listed||{};
+    SP500=new Set((u.sp500||[]).map(x=>x.toUpperCase()));
   }catch(e){ E.innerHTML=bannerHTML('b-bad','לא הצלחנו לטעון את רשימת המניות.'); ideasDone=false; return; }
 
-  // stage 1: today's quote for every name in the universe
-  const quotes=(await mapLimit(UNIVERSE,3,async id=>{
+  /* The data source refuses beyond roughly 330 requests in a burst, measured.
+     So every Israeli share is checked daily, and the American list is worked
+     through in rotating slices, covering all of it across a few days. */
+  const US_PER_DAY=220;
+  const usAll=u.us.map(x=>x.toUpperCase());
+  const offset=(dayNum()*US_PER_DAY)%usAll.length;
+  const usToday=usAll.slice(offset).concat(usAll.slice(0,Math.max(0,offset+US_PER_DAY-usAll.length))).slice(0,US_PER_DAY);
+  const list=u.tase.map(x=>'a/TLV-'+x).concat(usToday.map(x=>'s/'+x.toLowerCase()));
+
+  const quotes=(await mapLimit(list,3,async id=>{
     const q=await quote(id); if(!q) return null;
     const lo=q.l52,hi=q.h52;
     return {id,q,cp:q.cp,pos:(lo&&hi&&hi>lo)?(q.p-lo)/(hi-lo)*100:null,
@@ -1084,78 +1088,74 @@ async function renderIdeas(){
 
   if(!quotes.length){
     E.innerHTML = RATE_LIMITED
-      ? bannerHTML('b-warn','אתר הנתונים חוסם אותנו זמנית מרוב בקשות. זו לא תקלה בתיק שלך. נסה שוב בעוד כשעה, והנתונים יחזרו לבד.')
+      ? bannerHTML('b-warn','אתר הנתונים חוסם אותנו זמנית מרוב בקשות. זו לא תקלה בתיק שלך. נסה שוב בעוד כשעה.')
       : bannerHTML('b-bad','לא הצלחנו להביא מחירים כרגע. בדוק שיש חיבור לאינטרנט ונסה שוב מאוחר יותר.');
     ideasDone=false; return;
   }
 
-  // quality gate: must actually trade, and must not be a wild mover
-  const liquid=quotes.filter(x=>x.turnover>=1e6 && Math.abs(x.cp)<15);
-  // most interesting today = biggest absolute move, on real turnover
-  const candidates=liquid.slice().sort((a,b)=>Math.abs(b.cp)-Math.abs(a.cp)).slice(0,12);
+  // liquid, sane, and not already at the top of its range: we are hunting buys
+  const liquid=quotes.filter(x=>x.turnover>=1e6 && Math.abs(x.cp)<15 && x.pos!=null && x.pos<80);
+  const candidates=liquid.slice()
+      .sort((a,b)=>(b.cp||0)-(a.cp||0))     // today's strength first
+      .slice(0,22);
 
-  say(`בודק לעומק ${candidates.length} מניות שזזו היום…`);
+  say(`בודק לעומק ${candidates.length} מניות…`);
 
   const deep=(await mapLimit(candidates,2,async x=>{
-    const h=await history(x.id,'5Y'); const t=trend(h);
-    return t?Object.assign({},x,{t:t,risk:riskLevel(h)}):null;
+    const h=await history(x.id,'5Y'); if(!h) return null;
+    const M=analyze(h,x.q); if(!M) return null;
+    const v=verdict(M);
+    if(!v||v.k!=='buy') return null;        // BUY ONLY on this tab
+    return Object.assign({},x,{M:M,v:v,risk:riskLevel(h)});
   })).filter(Boolean);
 
-  // score: aligned independent signals, plus today's move as the trigger
-  deep.forEach(x=>{ x.score=x.t.sig.length + (Math.abs(x.cp)>=3?1:0); });
-  const picks=deep.filter(x=>x.score>=2).sort((a,b)=>b.score-a.score).slice(0,3);
+  deep.sort((a,b)=>b.v.score-a.v.score || (b.M.r3m||0)-(a.M.r3m||0));
+  const picks=deep.slice(0,5);
   const now=new Date();
 
-  const intro = `<div class="card" style="background:#f2f6fa">
+  const intro=`<div class="card" style="background:#f2f6fa">
       <div class="whyh">איך נבנתה הרשימה של היום?</div>
       <ul class="whyul">
-        <li>נבדקו <b>${esc(quotes.length)}</b> מניות: 70 המניות הנסחרות ביותר בתל אביב, ו־102 מניות מדד נאסד"ק 100.</li>
-        <li>נשארו רק מניות שנסחרו היום בהיקף אמיתי, ובלי קפיצות קיצוניות.</li>
-        <li>מי שזזה היום נבדק לעומק מול שנה של נתוני מסחר.</li>
+        <li>נבדקו <b>${esc(quotes.length)}</b> מניות: כל המניות הנסחרות בתל אביב שברשימה, ו־${esc(usToday.length)} מניות אמריקאיות מתוך מדדי S&P 500 ונאסד"ק 100.</li>
+        <li>הרשימה האמריקאית מתחלפת מדי יום, כך שתוך כמה ימים נבדקות כל ${esc(usAll.length)} המניות.</li>
+        <li>לכל מועמדת נבדקו תשעה מדדים על פני חמש שנים: מגמה, ממוצעים נעים, תשואות, מרחק מהשיא, מחזור ותנודתיות.</li>
+        <li><b>מוצגות רק מניות לקנייה.</b> מניות למכירה מופיעות רק בתיק שלך.</li>
       </ul>
-      <div class="whyc">⚠ זו רשימה מחושבת מתוך נתוני מסחר בלבד. אין כאן מידע על חדשות או על מצב החברה, וזו אינה תחזית ואינה ייעוץ.</div>
+      <div class="whyc">⚠ זו רשימה מחושבת מנתוני מסחר בלבד, ללא מידע על חדשות או על מצב החברה. אינה תחזית ואינה ייעוץ.</div>
     </div>`;
 
   if(!picks.length){
-    E.innerHTML = bannerHTML('b-ok','נבדקו <b>'+esc(quotes.length)+'</b> מניות, '+esc(dLong.format(now))+'.')
-      + intro
-      + `<div class="card center"><div class="nm">היום אין משהו מיוחד לדווח</div>
-         <div class="note">לא נמצאה מניה שעונה על התנאים. זה תקין ולא תקלה. עדיף לא להראות המלצה מאשר להראות משהו חלש.</div></div>`;
+    E.innerHTML=bannerHTML('b-ok','נבדקו <b>'+esc(quotes.length)+'</b> מניות, '+esc(dLong.format(now))+'.')
+      +intro
+      +`<div class="card center"><div class="nm">היום אין מניה שעומדת בתנאים</div>
+         <div class="note">אף מניה לא עברה את כל הבדיקות היום. זה תקין ולא תקלה. עדיף לא להמליץ מאשר להמליץ על משהו חלש.</div></div>`;
     await cacheSet('ideas:'+dayKey(),E.innerHTML);
     return;
   }
 
-  const html = bannerHTML('b-ok','נבדקו <b>'+esc(quotes.length)+'</b> מניות בתל אביב ובנאסד"ק, '+esc(dLong.format(now))+'. נמצאו <b>'+esc(picks.length)+'</b> ששווה להסתכל עליהן.')
-    + intro
-    + picks.map(x=>{
-        const isUS=x.id.startsWith('s/');
-        const sym=x.id.replace('s/','').replace('a/TLV-','').toUpperCase();
-        const nm=isUS?(USNAMES[sym]||sym):(HEB_NAME[sym]||sym);
-        const o={
-          name:nm, sub:(isUS?'נאסד"ק':'תל אביב')+' · '+sym,
-          priceNow:x.q.p, cur:isUS?'USD':'ILS',
-          lo:x.q.l52, hi:x.q.h52, v:verdict(x.q.p,x.q.l52,x.q.h52),
-          targets:{sell:x.q.h52, buy:x.q.l52+(x.q.h52-x.q.l52)*0.2},
-          companyName:isUS?(USNAMES[sym]||nm):nm,
-          newsName:isUS?(USNAMES[sym]||nm):nm, newsHe:!isUS, risk:x.risk, anaId:x.id,
-          sources:[
-            ['מחיר ונתוני מסחר','אתר stockanalysis.com, בבורסת '+(x.q.ex||'')+', נכון ל־'+srcTime(x.q)],
-            ['חישוב המגמה','שנה של מחירי סגירה ומחזורי מסחר יומיים']
-          ],
-          details:'<b>הכלל:</b> נבחרו מניות שזזו היום בהיקף מסחר אמיתי, ושיש להן לפחות שני סימנים עצמאיים באותו כיוון על פני שנה של נתונים.'
-        };
-        const moveTxt = (x.cp>=0?'עלתה':'ירדה')+' היום ב־'+nfPct.format(Math.abs(x.cp)/100);
-        const why = `<div class="why">
-            <div class="whyh">למה היא ברשימה של היום?</div>
-            <div class="whyl">${esc(nm)} ${esc(moveTxt)}.</div>
-            <ul class="whyul">${x.t.sig.map(g=>`<li><b>${esc(g[0])}:</b> ${esc(g[1])}</li>`).join('')}
-              <li>שינוי בחודש האחרון: <b class="num">${esc(nfPct.format(x.t.r1m/100))}</b>, בשלושה חודשים: <b class="num">${esc(nfPct.format(x.t.r3m/100))}</b></li>
-            </ul>
-            <div class="whyc">⚠ אלה סימנים מתוך גרף המסחר בלבד. הם לא אומרים מה יקרה מחר.</div>
-          </div>`;
-        o.customWhy = why;
-        return cardHTML(o);
-      }).join('');
+  const html=bannerHTML('b-ok','נבדקו <b>'+esc(quotes.length)+'</b> מניות, '+esc(dLong.format(now))+'. נמצאו <b>'+esc(picks.length)+'</b> מניות לקנייה.')
+    +intro
+    +picks.map(x=>{
+      const isUS=x.id.startsWith('s/');
+      const sym=x.id.replace('s/','').replace('a/TLV-','').toUpperCase();
+      const nm=isUS?(USNAMES[sym]||sym):(HEB_NAME[sym]||sym);
+      const o={
+        name:nm, sub:(isUS?'נאסד"ק':'תל אביב')+' · '+sym,
+        priceNow:x.q.p, cur:isUS?'USD':'ILS',
+        lo:x.q.l52, hi:x.q.h52, v:x.v, M:x.M, risk:x.risk,
+        sp500:isUS&&SP500.has(sym),
+        targets:targetsFrom(x.M),
+        companyName:isUS?(USNAMES[sym]||nm):nm,
+        newsName:isUS?(USNAMES[sym]||nm):nm, newsHe:!isUS, anaId:x.id,
+        sources:[
+          ['מחיר ונתוני מסחר','אתר stockanalysis.com, בבורסת '+(x.q.ex||'')+', נכון ל־'+srcTime(x.q)],
+          ['חישוב המדדים','חמש שנים של מחירי סגירה ומחזורי מסחר יומיים']
+        ],
+        details:'<b>איך נבחרה:</b> נדרשו לפחות ארבעה מתוך חמישה תנאים חיוביים, ובלי סימנים לשבירת מגמה. '
+               +'המדדים המלאים מוצגים בכרטיס.'
+      };
+      return cardHTML(o);
+    }).join('');
   E.innerHTML=html;
   await cacheSet('ideas:'+dayKey(),html);
 }
@@ -1185,13 +1185,15 @@ async function checkStock(id,nm){
   if(!q){R.innerHTML=`<div class="card"><div class="note">לא הצלחנו למצוא מחיר עדכני לנייר הזה.</div></div>`;return;}
   const isUS=id.startsWith('s/');
   const o={name:nm,sub:(isUS?'נאסד"ק':'תל אביב')+' · '+(q.ex||''),priceNow:q.p,cur:isUS?'USD':'ILS',
-    lo:q.l52,hi:q.h52,v:verdict(q.p,q.l52,q.h52)};
-  if(o.lo!=null&&o.hi!=null)o.targets={sell:o.hi,buy:o.lo+(o.hi-o.lo)*0.2};
+    lo:q.l52,hi:q.h52};
+  o.targets=targetsFrom(o.M);
   o.sources=[['מחיר ושיא ושפל שנתי','אתר stockanalysis.com, בבורסת '+(q.ex||'')+', נכון ל־'+srcTime(q)]];
   o.details=`<b>הכלל:</b> הרצפה והתקרה הן המחיר הנמוך והגבוה ביותר ב־52 השבועות האחרונים.`;
   o.companyName = isUS ? (USNAMES[id.replace('s/','').toUpperCase()]||nm) : nm;
   o.newsName=o.companyName; o.newsHe=!isUS;
   const hh=await history(id,'5Y'); o.risk=riskLevel(hh); o.anaId=id;
+  o.M=analyze(hh,q); o.v=verdict(o.M);
+  if(isUS) o.sp500=SP500.has(id.replace('s/','').toUpperCase());
   R.innerHTML=cardHTML(o);
   // open it straight away here: he asked for this one specifically
   const d=R.querySelector('details.cinfo'); if(d){ d.open=true; loadCompany(d); }
