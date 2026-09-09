@@ -1213,7 +1213,7 @@ async function renderIdeas(mode){
   const E=document.getElementById('ideas');
   const say=t=>E.innerHTML=`<div class="center" style="padding:26px"><span class="spin"></span><div style="margin-top:12px;font-weight:700">${t}</div></div>`;
 
-  const cached=await cacheGet('ideas:'+mode+':'+dayKey(),TTL.ideas);
+  const cached=await cacheGet('ideas2:'+mode+':'+dayKey(),TTL.ideas);
   if(cached){
     E.innerHTML=cached+`<div class="card center" style="background:#f2f6fa">
       <button class="bigbtn ${mode==='quick'?'':'sec'}" id="switchMode">
@@ -1309,9 +1309,8 @@ async function renderIdeas(mode){
 
   /* Deep-check a promising name and, if it qualifies, put it on screen at once. */
   const pending=[];
-  let draining=false;
-  async function drain(){
-    if(draining) return; draining=true;
+  let drainer=null;
+  async function drainAll(){
     while(pending.length){
       const x=pending.shift();
       if(seen.has(x.id)) continue;
@@ -1326,7 +1325,17 @@ async function renderIdeas(mode){
       if(found.length>8) found.length=8;
       E.innerHTML=shell(checked,list.length,true);
     }
-    draining=false;
+  }
+  /* A single in-flight drain, but callers can genuinely wait for it. The old
+     version returned immediately whenever one was already running, so the final
+     wait did nothing and the list was rendered - and cached - while still empty.
+     That is why both scans reported zero. */
+  function kickDrain(){
+    if(!drainer) drainer=drainAll().catch(e=>console.warn('drain',e)).then(()=>{drainer=null;});
+    return drainer;
+  }
+  async function drainCompletely(){
+    while(pending.length || drainer){ await kickDrain(); }
   }
 
   await mapLimit(list,2,async id=>{
@@ -1336,7 +1345,7 @@ async function renderIdeas(mode){
       const turn=q.p*(q.v||0)*(id.startsWith('a/')?0.01:1);
       if(turn>=1e6 && Math.abs(q.cp||0)<15 && pos<75){
         pending.push({id,q,pos});
-        if(pending.length>=4) drain();
+        if(pending.length>=4) kickDrain();
       }
     }
     return q;
@@ -1345,7 +1354,7 @@ async function renderIdeas(mode){
     if(done%10===0 || done===total) E.innerHTML=shell(done,total,true);
   },300);
 
-  await drain();
+  await drainCompletely();
   const partial=RATE_LIMITED;
   const elapsed=Math.round((Date.now()-t0)/1000);
   console.log('scan finished in',elapsed,'s, checked',checked,'found',found.length);
@@ -1361,7 +1370,8 @@ async function renderIdeas(mode){
       </button>
     </div>`;
   E.innerHTML=html+switcher;
-  await cacheSet('ideas:'+mode+':'+dayKey(),html);
+  if(found.length) await cacheSet('ideas2:'+mode+':'+dayKey(),html);
+  else ideasDone=false;   // an empty run is never remembered
   const b=document.getElementById('switchMode');
   if(b) b.onclick=()=>{ ideasDone=false; ideasMode=null; renderIdeas(mode==='quick'?'deep':'quick'); };
 }
