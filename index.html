@@ -289,6 +289,7 @@ const DB={
    TASE master: security number -> symbol -> stockanalysis id
    ============================================================ */
 let TASE=[], TASEbyNo=new Map(), USNAMES={};
+let DUAL={}, SP500=new Set();
 async function loadTase(){
   try{
     const txt=await (await fetch('data/tase_master.csv')).text();
@@ -304,7 +305,11 @@ async function loadTase(){
     }
   }catch(e){ console.warn('tase master failed',e); }
   try{ USNAMES = await (await fetch('data/us_tickers.json')).json(); }catch(e){ USNAMES={}; }
-  try{ const _u=await (await fetch('data/universe.json')).json(); DUAL=_u.dual_listed||{}; SP500=new Set((_u.sp500||[]).map(x=>x.toUpperCase())); }catch(e){ DUAL={}; }
+  try{
+    const _u=await (await fetch('data/universe.json')).json();
+    DUAL=_u.dual_listed||{};
+    SP500=new Set((_u.sp500||[]).map(x=>String(x).toUpperCase()));
+  }catch(e){ console.warn('universe load failed',e); }
   TASE.forEach(t=>{ if(t.sym) HEB_NAME[t.sym.toUpperCase()]=t.he||t.en; });
   SEARCH_IDX=buildIndex(TASE,PRICEABLE,USNAMES);
 }
@@ -978,10 +983,17 @@ async function handleFile(file){
       ? bannerHTML('b-warn','זה אותו קובץ כמו בפעם הקודמת. הנתונים מתאריך <b>'+esc(fileDateTxt)+'</b>.')
       : bannerHTML('b-ok','✓ הקובץ נטען. הנתונים מתאריך <b>'+esc(fileDateTxt)+'</b>.');
     document.getElementById('lastup').innerHTML='הקובץ האחרון: <b>'+esc(fileDateTxt)+'</b>';
-    await renderPortfolio();
   }catch(err){
-    console.error(err);
+    console.error('parse/store failed',err);
     S.innerHTML=bannerHTML('b-bad','לא הצלחנו לקרוא את הקובץ. ודא שזה קובץ האקסל שהורדת מהבנק.');
+    return;
+  }
+  // Displaying is a separate step. A fault here must never be reported as a
+  // problem with his file: the file was read fine, so say so.
+  try{ await renderPortfolio(); }
+  catch(err){
+    console.error('render failed',err);
+    S.innerHTML=bannerHTML('b-warn','הקובץ נקרא בהצלחה, אבל הייתה תקלה בהצגת הניתוח. נסה לרענן את העמוד.');
   }
 }
 
@@ -1062,7 +1074,7 @@ function trend(rows){
   return {px:px,r1m:r1m,r3m:r3m,ma200:ma200,volr:(vol5&&vol60)?vol5/vol60:null,hi3m:hi3m,sig:sig};
 }
 
-let ideasDone=false, SP500=new Set();
+let ideasDone=false;
 
 /* Render the scheduled job's output. Same cards, same measures, but the scan
    behind it covered every stock rather than a rotating slice. */
