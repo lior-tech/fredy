@@ -105,6 +105,8 @@ nav.tabs button{transition:none}
 .bg-a{background:var(--amberbg);color:var(--amber);border-color:#e0b968}
 .bg-n{background:#eef1f4;color:var(--ink2);border-color:var(--line)}
 .bg-sp{background:#12283d;color:#fff;border-color:#12283d;direction:ltr;unicode-bidi:isolate}
+.bg-new{background:#fff8e6;color:#8a5a00;border-color:var(--gold-soft)}
+.bg-cont{background:#f2f6fa;color:var(--ink2);border-color:#b9cddd}
 .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-top:16px}
 .cell{background:#f7f9fb;border-radius:14px;padding:12px 14px}
 .cell .k{color:var(--ink2);font-size:.72em;font-weight:700}
@@ -659,6 +661,10 @@ function analyze(rows,q){
   const v=r.map(x=>{const f=(x.a&&x.c)?x.a/x.c:1; return (x.v||0)*(f/fLast);});
   const h=r.map(x=>{const f=(x.a&&x.c)?x.a/x.c:1; return (x.h||x.c)*f;});
   const ma=(a,n)=>a.length>=n?a.slice(-n).reduce((x,y)=>x+y,0)/n:null;
+  // rolling means, so we can ask how many sessions a condition has held
+  const roll=(a,n)=>{const o=[];let sum=0;for(let i=0;i<a.length;i++){sum+=a[i];if(i>=n)sum-=a[i-n];if(i>=n-1)o[i]=sum/n;}return o;};
+  const r200=roll(c,200), r50=roll(c,50);
+  const streak=(arr)=>{let k=0;for(let i=c.length-1;i>=0;i--){if(arr[i]==null)break;if(c[i]>arr[i])k++;else break;}return k;};
   const last=c[c.length-1];
   const px=(typeof q.p==='number')?q.p:last;
   const scale=last?px/last:1;              // keep history and the live quote consistent
@@ -682,8 +688,20 @@ function analyze(rows,q){
     fromHi3m:hi3m?((px/hi3m-1)*100):null,
     fromHi1m:hi1m?((px/hi1m-1)*100):null,
     volRatio:(vol5&&vol60)?vol5/vol60:null,
-    dailyMove:mv.length?mv.reduce((a,b)=>a+b,0)/mv.length:null
+    dailyMove:mv.length?mv.reduce((a,b)=>a+b,0)/mv.length:null,
+    daysAbove200:streak(r200),
+    daysAbove50:streak(r50)
   };
+  /* Timeliness. Not used to qualify a stock, only to order the day's list, so
+     that what shows up reflects what is actually happening now rather than the
+     same names in the same order every morning. */
+  let fresh=0;
+  if(M.daysAbove200>0 && M.daysAbove200<=15) fresh+=3;   // only just reclaimed the long trend
+  else if(M.daysAbove200>0 && M.daysAbove200<=40) fresh+=1;
+  if(M.daysAbove50>0 && M.daysAbove50<=8) fresh+=1;
+  if(M.volRatio!=null && M.volRatio>=1.3) fresh+=2;      // unusual interest right now
+  if(M.fromHi1m!=null && M.fromHi1m<=-3) fresh+=1;       // dipped this month, better entry today
+  M.fresh=fresh;
   return M;
 }
 
@@ -845,7 +863,10 @@ function cardHTML(o){
   const badge=(v?`<span class="badge ${v.bg}">${esc(v.txt)}</span>`
                 :`<span class="badge bg-n">${o.priceNow!=null?'אין המלצה כרגע':'אין ניתוח מחיר'}</span>`)
         +(o.risk?`<span class="badge ${o.risk.bg}" style="margin-inline-start:8px">${esc(o.risk.txt)}</span>`:'')
-        +(o.sp500?`<span class="badge bg-sp" style="margin-inline-start:8px">S&P 500</span>`:'');
+        +(o.sp500?`<span class="badge bg-sp" style="margin-inline-start:8px">S&P 500</span>`:'')
+        +(o.tenure?(o.tenure.isNew
+            ? `<span class="badge bg-new" style="margin-inline-start:8px">חדש היום</span>`
+            : `<span class="badge bg-cont" style="margin-inline-start:8px">יום ${esc(o.tenure.days)} ברשימה</span>`):'');
   let cells='';
   if(o.qty!=null)      cells+=`<div class="cell"><div class="k">כמות</div><div class="v num">${esc(nfNum.format(o.qty))}</div></div>`;
   if(o.valueILS!=null) cells+=`<div class="cell"><div class="k">שווי</div><div class="v num">${esc(money(o.valueILS,'ILS'))}</div></div>`;
@@ -1265,6 +1286,13 @@ async function renderIdeas(mode){
   const seen=new Set();
   let checked=0;
 
+  /* A record of which names have appeared, so the list can say what is new today
+     and what has held its place. Recomputed from scratch every day: a name only
+     reappears if it genuinely still qualifies. */
+  let pickHist={};
+  try{ pickHist=(await DB.get('pickhist'))||{}; }catch(e){ pickHist={}; }
+  const today=dayKey();
+
   const shell=(done,total,scanning)=>{
     const pctv=Math.round(done/total*100);
     const mins=Math.max(0,Math.round(((total-done)/2.1)/60));
@@ -1302,7 +1330,11 @@ async function renderIdeas(mode){
     const isUS=x.id.startsWith('s/');
     const sym=x.id.replace('s/','').replace('a/TLV-','').toUpperCase();
     const nm=isUS?(USNAMES[sym]||sym):(HEB_NAME[sym]||sym);
+    const rec=pickHist[sym];
+    const runDays=(rec&&rec.last!==today)?(rec.days||1)+1:(rec?(rec.days||1):1);
     return {
+      symbol:sym,
+      tenure:(!rec||rec.days<=0)?{isNew:true}:{isNew:false,days:runDays},
       name:nm, sub:(isUS?'נאסד"ק':'תל אביב')+' · '+sym,
       priceNow:x.q.p, cur:isUS?'USD':'ILS',
       lo:x.q.l52, hi:x.q.h52, v:x.v, M:x.M, risk:x.risk,
@@ -1332,7 +1364,7 @@ async function renderIdeas(mode){
       const M=analyze(h,x.q); if(!M) continue;
       const v=verdict(M); if(!v||v.k!=='buy') continue;
       found.push(buildCard(Object.assign({},x,{M:M,v:v,risk:riskLevel(h)})));
-      found.sort((a,b)=>(b.v.score-a.v.score)||((b.M.r3m||0)-(a.M.r3m||0)));
+      found.sort((a,b)=>(b.v.score-a.v.score)||((b.M.fresh||0)-(a.M.fresh||0))||((b.M.r3m||0)-(a.M.r3m||0)));
       if(found.length>8) found.length=8;
       E.innerHTML=shell(checked,list.length,true);
     }
@@ -1381,7 +1413,23 @@ async function renderIdeas(mode){
       </button>
     </div>`;
   E.innerHTML=html+switcher;
-  if(found.length) await cacheSet('ideas2:'+mode+':'+dayKey(),html);
+  if(found.length){
+    await cacheSet('ideas2:'+mode+':'+dayKey(),html);
+    try{
+      const next={};
+      for(const c of found){
+        const prev=pickHist[c.symbol];
+        next[c.symbol]={last:today, days:(prev&&prev.last!==today)?(prev.days||1)+1:(prev?prev.days||1:1)};
+      }
+      // forget anything that has not appeared for a fortnight
+      for(const k in pickHist){
+        if(next[k]) continue;
+        const age=(Date.parse(today)-Date.parse(pickHist[k].last||today))/86400000;
+        if(age<14) next[k]=pickHist[k];
+      }
+      await DB.set('pickhist',next);
+    }catch(e){}
+  }
   else ideasDone=false;   // an empty run is never remembered
   const b=document.getElementById('switchMode');
   if(b) b.onclick=()=>{ ideasDone=false; ideasMode=null; renderIdeas(mode==='quick'?'deep':'quick'); };
