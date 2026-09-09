@@ -1063,6 +1063,56 @@ function trend(rows){
 }
 
 let ideasDone=false, SP500=new Set();
+
+/* Render the scheduled job's output. Same cards, same measures, but the scan
+   behind it covered every stock rather than a rotating slice. */
+function renderPrescan(pre){
+  const when=new Date(Date.parse(pre.generated_at));
+  const intro=`<div class="card" style="background:#f2f6fa">
+      <div class="whyh">איך נבנתה הרשימה של היום?</div>
+      <ul class="whyul">
+        <li>נבדקו <b>${esc(pre.scanned)}</b> מניות: כל המניות ברשימה בתל אביב ובארצות הברית.</li>
+        <li>מתוכן <b>${esc(pre.candidates)}</b> עברו את סינון הנזילות והיציבות.</li>
+        <li>לכל אחת נבדקו תשעה מדדים על פני חמש שנים.</li>
+        <li><b>מוצגות רק מניות לקנייה.</b> מניות למכירה מופיעות רק בתיק שלך.</li>
+      </ul>
+      <div class="whyc">⚠ רשימה מחושבת מנתוני מסחר בלבד. אינה תחזית ואינה ייעוץ.</div>
+    </div>`;
+  if(!pre.ideas.length){
+    return bannerHTML('b-ok','נבדקו <b>'+esc(pre.scanned)+'</b> מניות, '+esc(dLong.format(when))+'.')+intro
+      +`<div class="card center"><div class="nm">היום אין מניה שעומדת בתנאים</div>
+        <div class="note">אף מניה לא עברה את כל הבדיקות. זה תקין ולא תקלה.</div></div>`;
+  }
+  return bannerHTML('b-ok','נבדקו <b>'+esc(pre.scanned)+'</b> מניות, '+esc(dLong.format(when))+'. נמצאו <b>'+esc(pre.ideas.length)+'</b> מניות לקנייה.')
+    +intro
+    +pre.ideas.map(i=>{
+      const isUS=i.market==='US';
+      const nm=isUS?(USNAMES[i.symbol]||i.symbol):(HEB_NAME[i.symbol]||i.symbol);
+      const M=i.M;
+      const o={
+        name:nm, sub:(isUS?'נאסד"ק':'תל אביב')+' · '+i.symbol,
+        priceNow:i.price, cur:isUS?'USD':'ILS',
+        lo:M.lo52, hi:M.hi52, M:M, sp500:!!i.sp500,
+        risk:(M.dailyMove==null)?null:(M.dailyMove<1.5?{txt:'סיכון נמוך',bg:'bg-g',why:'המניה זזה בממוצע '+nfNum.format(M.dailyMove)+'% ביום. זו תנודתיות נמוכה יחסית.'}
+              :M.dailyMove<2.8?{txt:'סיכון בינוני',bg:'bg-a',why:'המניה זזה בממוצע '+nfNum.format(M.dailyMove)+'% ביום. זה טווח רגיל למניה גדולה.'}
+              :{txt:'סיכון גבוה',bg:'bg-r',why:'המניה זזה בממוצע '+nfNum.format(M.dailyMove)+'% ביום. זו מניה תנודתית.'}),
+        v:{k:'buy',cls:'g',bg:'bg-g',txt:'כדאי לשקול קנייה',
+           headline:'כמה מדדים שונים מצביעים לאותו כיוון חיובי.',
+           reasons:i.reasons||[], score:i.score, of:i.of,
+           caveat:'זה לא אומר שהמחיר יעלה. מדובר בחישוב מנתוני מסחר בלבד.'},
+        targets:targetsFrom(M),
+        companyName:isUS?(USNAMES[i.symbol]||nm):nm,
+        newsName:isUS?(USNAMES[i.symbol]||nm):nm, newsHe:!isUS, anaId:i.id,
+        sources:[
+          ['מחיר ונתוני מסחר','אתר stockanalysis.com'+(i.ex?', בבורסת '+i.ex:'')+(i.asof?', נכון ל־'+i.asof:'')],
+          ['חישוב המדדים','חמש שנים של מחירי סגירה ומחזורי מסחר יומיים'],
+          ['הסריקה','רצה אוטומטית בבוקר על כל '+pre.scanned+' המניות']
+        ],
+        details:'<b>איך נבחרה:</b> נדרשו לפחות ארבעה מתוך חמישה תנאים חיוביים, ובלי סימנים לשבירת מגמה.'
+      };
+      return cardHTML(o);
+    }).join('');
+}
 const dayKey=()=>new Date().toISOString().slice(0,10);
 const dayNum=()=>Math.floor(Date.now()/86400000);
 
@@ -1073,6 +1123,18 @@ async function renderIdeas(){
 
   const cached=await cacheGet('ideas:'+dayKey(),TTL.ideas);
   if(cached){ E.innerHTML=cached; return; }
+
+  /* If the scheduled job has run, use its result: it scans the entire universe
+     server-side instead of the small slice a browser is allowed. Fall back to
+     scanning here only when that file is missing or stale. */
+  try{
+    const pre=await (await fetch('data/ideas.json',{cache:'no-store'})).json();
+    const age=(Date.now()-Date.parse(pre.generated_at||0))/36e5;
+    if(pre && Array.isArray(pre.ideas) && age<40){
+      const html=renderPrescan(pre);
+      E.innerHTML=html; await cacheSet('ideas:'+dayKey(),html); return;
+    }
+  }catch(e){}
 
   say('טוען את רשימת המניות…');
   let u=null;
