@@ -737,12 +737,22 @@ function verdict(M){
   if(has(M.r3m) && M.r3m<=-10){ sellB++; }
   if(has(M.fromHi3m) && M.fromHi3m<=-20){ sellB++; }
 
-  if(buy>=4 && sellB<=1)
-    return {k:'buy',cls:'g',bg:'bg-g',txt:'כדאי לשקול קנייה',
-      headline:'כמה מדדים שונים מצביעים לאותו כיוון חיובי.',
+  /* Graded, not pass-or-fail. All nine measures are always shown; the
+     recommendation reflects how many of the five buy conditions hold, so a
+     reasonable candidate still appears rather than the list coming back empty.
+     Measured across a real sample: 4 of 5 holds for about half the market,
+     3 of 5 for about four fifths, which is why 3 is shown but labelled weaker. */
+  if(buy>=3 && sellB<=1){
+    const grade = buy>=5 ? {txt:'מומלצת מאוד', bg:'bg-g',  head:'כל המדדים מצביעים לאותו כיוון חיובי.'}
+                : buy>=4 ? {txt:'מומלצת',      bg:'bg-g',  head:'רוב המדדים מצביעים לאותו כיוון חיובי.'}
+                :          {txt:'מעניינת',     bg:'bg-a',  head:'חלק מהמדדים חיוביים, אבל לא כולם. שווה מבט, לא יותר.'};
+    return {k:'buy',cls:(buy>=4?'g':'a'),bg:grade.bg,txt:grade.txt,
+      headline:grade.head,
       reasons:reasons.filter(x=>x[0]==='b').map(x=>x[1]),
       score:buy, of:5,
-      caveat:'זה לא אומר שהמחיר יעלה. מדובר בחישוב מנתוני מסחר בלבד.'};
+      caveat:(buy>=4?'זה לא אומר שהמחיר יעלה. מדובר בחישוב מנתוני מסחר בלבד.'
+                    :'זו המלצה חלשה יחסית. חלק מהתנאים לא התקיימו, אז כדאי להיות זהיר.')};
+  }
 
   if(sellB>=3)
     return {k:'sell',cls:'r',bg:'bg-r',txt:'כדאי לשקול מכירה',
@@ -799,7 +809,8 @@ function whyHTML(v,cur){
     <div class="whyh">למה ההמלצה הזו?</div>
     <div class="whyl">${esc(v.headline)}</div>
     <ul class="whyul">${v.reasons.map(r=>'<li>'+esc(r)+'</li>').join('')}</ul>
-    <div class="whyr">התקיימו ${esc(v.score)} מתוך ${esc(v.of)} התנאים.</div>
+    <div class="whyr">התקיימו <b>${esc(v.score)}</b> מתוך <b>${esc(v.of)}</b> התנאים לקנייה.
+      ${v.score<v.of?'שאר התנאים לא התקיימו, והמדדים המלאים מוצגים למטה.':''}</div>
     <div class="whyc">⚠ ${esc(v.caveat)} זהו חישוב אוטומטי, לא ייעוץ.</div>
   </div>`;
 }
@@ -1343,7 +1354,7 @@ async function renderIdeas(mode){
     if(q && q.p && q.l52!=null && q.h52 && q.h52>q.l52){
       const pos=(q.p-q.l52)/(q.h52-q.l52)*100;
       const turn=q.p*(q.v||0)*(id.startsWith('a/')?0.01:1);
-      if(turn>=1e6 && Math.abs(q.cp||0)<15 && pos<75){
+      if(turn>=1e6 && Math.abs(q.cp||0)<15 && pos<85){
         pending.push({id,q,pos});
         if(pending.length>=4) kickDrain();
       }
