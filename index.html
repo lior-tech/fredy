@@ -7,7 +7,8 @@
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📈</text></svg>">
 <style>
 :root{
-  --bg:#f4f6f8; --card:#ffffff; --ink:#12181f; --ink2:#3d4a58; --line:#c9d3dd;
+  --bg:#f3f2ef; --card:#ffffff; --ink:#14181d; --ink2:#4a5560; --line:#d3d0c8;
+  --brand:#0f2338; --brand2:#1b3a55; --gold:#a98442; --gold-soft:#c9a76a;
   --green:#0a6b3d; --greenbg:#e3f5ea; --red:#a01523; --redbg:#fdeaec;
   --amber:#8a5a00; --amberbg:#fdf2dc; --blue:#12507e; --bluebg:#e6f0f9;
   --step:0px;
@@ -24,9 +25,23 @@ body{
 .wrap{max-width:920px;margin:0 auto;padding:0 16px}
 
 /* header */
-header{background:#12283d;color:#fff;padding:18px 0 14px}
-.hrow{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
-h1{font-size:1.5em;font-weight:800;letter-spacing:0}
+header{
+  background:linear-gradient(135deg,var(--brand) 0%,var(--brand2) 100%);
+  color:#fff;padding:22px 0 18px;position:relative;overflow:hidden;
+  border-bottom:3px solid var(--gold);
+}
+header::after{                      /* a faint rising line, barely there */
+  content:'';position:absolute;inset:0;opacity:.10;pointer-events:none;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 120' preserveAspectRatio='none'%3E%3Cpolyline points='0,96 50,84 100,90 150,64 200,72 250,44 300,52 350,24 400,30' fill='none' stroke='%23ffffff' stroke-width='2.5'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;background-position:left bottom;background-size:62% 100%;
+}
+.hrow{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;position:relative;z-index:1}
+.brandrow{display:flex;align-items:center;gap:14px}
+.mark{width:52px;height:52px;flex:0 0 52px;border-radius:14px;background:rgba(255,255,255,.07);
+  border:1.5px solid rgba(201,167,106,.55);display:flex;align-items:center;justify-content:center}
+h1{font-size:1.5em;font-weight:800;letter-spacing:0;line-height:1.2}
+.subline{font-size:.7em;opacity:.85;font-weight:600;margin-top:3px;letter-spacing:.02em}
+.dateline{font-size:.62em;opacity:.6;font-weight:600;margin-top:2px}
 .sizer{display:flex;gap:8px;align-items:center}
 .sizer button{
   background:#fff;color:#12283d;border:2px solid #fff;border-radius:12px;
@@ -49,11 +64,12 @@ nav.tabs button{
   border:3px solid var(--line);background:#fff;color:var(--ink2);
   font-size:1.02em;font-weight:800;font-family:inherit;padding:8px 14px;
 }
-nav.tabs button[aria-selected="true"]{background:#12283d;color:#fff;border-color:#12283d}
+nav.tabs button[aria-selected="true"]{background:var(--brand);color:#fff;border-color:var(--brand);box-shadow:0 3px 12px rgba(15,35,56,.22)}
+nav.tabs button{transition:none}
 
 /* upload */
 .upload{
-  background:#fff;border:4px dashed #9ab0c4;border-radius:20px;
+  background:linear-gradient(180deg,#fff 0%,#fbfaf7 100%);border:2.5px dashed #a9b7c4;border-radius:20px;
   padding:26px 20px;text-align:center;margin:16px 0;
 }
 .bigbtn{
@@ -66,15 +82,20 @@ nav.tabs button[aria-selected="true"]{background:#12283d;color:#fff;border-color
 .hint{color:var(--ink2);font-size:.85em;margin-top:12px;line-height:1.5}
 
 /* summary */
-.sum{background:#fff;border:3px solid var(--line);border-radius:20px;padding:20px;margin:16px 0}
+.sum{background:linear-gradient(180deg,#fff 0%,#fbfaf7 100%);border:1.5px solid var(--line);border-radius:18px;
+  padding:22px;margin:16px 0;box-shadow:0 1px 2px rgba(20,24,29,.04),0 6px 20px rgba(20,24,29,.06);
+  border-top:3px solid var(--gold)}
 .sumtop{display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px}
 .sumlbl{color:var(--ink2);font-size:.8em;font-weight:700}
 .sumval{font-size:1.85em;font-weight:800}
 .pill{display:inline-block;padding:8px 16px;border-radius:999px;font-weight:800;font-size:.82em;margin-top:10px}
 
 /* cards */
-.card{background:var(--card);border:3px solid var(--line);border-radius:20px;padding:20px;margin:14px 0}
-.card.g{border-color:#7fc09c}.card.r{border-color:#e0949c}.card.a{border-color:#e0b968}
+.card{background:var(--card);border:1.5px solid var(--line);border-radius:18px;padding:20px;margin:14px 0;
+  box-shadow:0 1px 2px rgba(20,24,29,.04),0 4px 16px rgba(20,24,29,.05)}
+.card.g{border-color:#7fc09c;border-inline-start:5px solid #0a6b3d}
+.card.r{border-color:#e0949c;border-inline-start:5px solid #a01523}
+.card.a{border-color:#e0b968;border-inline-start:5px solid #8a5a00}
 .cardhead{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap}
 .nm{font-size:1.12em;font-weight:800;line-height:1.35}
 .sub{color:var(--ink2);font-size:.76em;font-weight:600;margin-top:2px}
@@ -121,7 +142,7 @@ details .body{font-size:.84em;color:var(--ink2);line-height:1.6;padding-top:6px}
 .sugg button{display:block;width:100%;text-align:start;padding:16px 18px;border:none;border-bottom:1px solid var(--line);background:#fff;font-size:.9em;font-family:inherit;cursor:pointer;color:var(--ink);min-height:60px}
 .sugg button:last-child{border-bottom:none}
 
-.foot{margin:30px 0 10px;padding:18px;background:#eef1f4;border-radius:16px;color:var(--ink2);font-size:.72em;line-height:1.6;border:2px solid var(--line)}
+.foot{margin:30px 0 10px;padding:18px;background:#eceae4;border-radius:16px;color:var(--ink2);font-size:.72em;line-height:1.6;border:2px solid var(--line)}
 .hidden{display:none !important}
 .center{text-align:center}
 .spin{display:inline-block;width:20px;height:20px;border:3px solid var(--line);border-top-color:var(--blue);border-radius:50%;animation:sp .8s linear infinite;vertical-align:middle}
@@ -133,9 +154,20 @@ details .body{font-size:.84em;color:var(--ink2);line-height:1.6;padding-top:6px}
 
 <header>
   <div class="wrap hrow">
-    <div>
-      <h1>התיק של פרדי זך</h1>
-      <div style="font-size:.72em;opacity:.85;font-weight:600" id="greet">שלום פרדי</div>
+    <div class="brandrow">
+      <div class="mark" aria-hidden="true">
+        <svg width="30" height="30" viewBox="0 0 32 32" fill="none">
+          <polyline points="4,24 11,17 16,20 22,11 28,14" stroke="#c9a76a" stroke-width="2.4"
+                    stroke-linecap="round" stroke-linejoin="round"/>
+          <circle cx="22" cy="11" r="2.6" fill="#c9a76a"/>
+          <path d="M4 28h24" stroke="#ffffff" stroke-opacity=".28" stroke-width="1.6" stroke-linecap="round"/>
+        </svg>
+      </div>
+      <div>
+        <h1>התיק של פרדי זך</h1>
+        <div class="subline" id="greet">שלום פרדי</div>
+        <div class="dateline" id="today"></div>
+      </div>
     </div>
     <div class="sizer">
       <span>גודל</span>
@@ -197,6 +229,12 @@ details .body{font-size:.84em;color:var(--ink2);line-height:1.6;padding-top:6px}
     <div id="result"></div>
   </section>
 
+  <div class="center" style="margin-top:26px;opacity:.4">
+    <svg width="22" height="22" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+      <polyline points="4,24 11,17 16,20 22,11 28,14" stroke="#4a5560" stroke-width="2.2"
+                stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+  </div>
   <div class="foot">
     המידע בעמוד זה הוא מידע כללי בלבד ואינו ייעוץ השקעות אישי. הנתונים מגיעים ממקורות
     חיצוניים ועשויים להיות שגויים או לא מעודכנים. אין לראות באמור המלצה לקנות או למכור
@@ -235,6 +273,14 @@ const esc  =(s)=> String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'
    Text size control
    ============================================================ */
 (function(){
+  const h=new Date().getHours();
+  const hi = h<5?'לילה טוב' : h<12?'בוקר טוב' : h<17?'צהריים טובים' : h<21?'ערב טוב' : 'לילה טוב';
+  const g=document.getElementById('greet'); if(g) g.textContent=hi+', פרדי';
+  const t=document.getElementById('today');
+  if(t) t.textContent=new Intl.DateTimeFormat('he-IL',{weekday:'long',day:'numeric',month:'long',year:'numeric'}).format(new Date());
+})();
+
+(function(){
   let step = parseInt(localStorage.getItem('step')||'0',10);
   const apply=()=>{document.documentElement.style.setProperty('--step',step+'px');localStorage.setItem('step',step);};
   document.getElementById('tPlus').onclick =()=>{step=Math.min(step+3,14);apply();};
@@ -253,7 +299,7 @@ const esc  =(s)=> String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'
         document.getElementById(t2).setAttribute('aria-selected', t2===t);
         document.getElementById(p2).classList.toggle('hidden', p2!==p);
       });
-      if(p==='p2') renderIdeas();
+      if(p==='p2') ideasHome();
       window.scrollTo({top:0,behavior:'smooth'});
     };
   });
@@ -438,7 +484,7 @@ const PRICEABLE=new Set(['Shares','Shares TASE UP','ETF Fund - Equity','ETF - Bo
    request fails. So: cache hard, ask for little, and back off on the first refusal. */
 let RATE_LIMITED=false;
 const pxCache=new Map();
-const TTL={quote:20*60*1000, hist:24*60*60*1000, ideas:12*60*60*1000};
+const TTL={quote:6*60*60*1000, hist:36*60*60*1000, ideas:12*60*60*1000};
 
 async function cacheGet(key,ttl){
   try{
@@ -1034,10 +1080,19 @@ function staleState(ts){
 let UNIVERSE=[];
 const HEB_NAME={};
 
-async function mapLimit(items,limit,fn,onTick){
+/* Measured against the live source: bursts get refused, but two workers with a
+   300ms gap sustain about 2.2 requests a second indefinitely with zero refusals.
+   150 requests at that pace returned 149 successes and no 429 at all. */
+async function mapLimit(items,limit,fn,onTick,gapMs){
   const out=new Array(items.length); let i=0,done=0;
+  const gap=gapMs==null?300:gapMs;
   await Promise.all(Array.from({length:Math.min(limit,items.length)},async()=>{
-    while(i<items.length){ const k=i++; out[k]=await fn(items[k],k); done++; if(onTick)onTick(done,items.length); }
+    while(i<items.length){
+      const k=i++;
+      out[k]=await fn(items[k],k);
+      done++; if(onTick) onTick(done,items.length,out);
+      if(gap) await sleep(gap);
+    }
   }));
   return out;
 }
@@ -1074,7 +1129,30 @@ function trend(rows){
   return {px:px,r1m:r1m,r3m:r3m,ma200:ma200,volr:(vol5&&vol60)?vol5/vol60:null,hi3m:hi3m,sig:sig};
 }
 
-let ideasDone=false;
+let ideasDone=false, ideasMode=null;
+
+/* Two ways to look at the market. The quick one covers the large, liquid names
+   in about a minute; the thorough one covers everything and takes a few minutes,
+   because the data source only sustains about two requests a second. */
+function ideasHome(){
+  if(ideasMode) return;                 // a scan is running or finished, leave it
+  const E=document.getElementById('ideas');
+  E.innerHTML=`
+    <div class="card" style="border-top:3px solid var(--gold)">
+      <div class="nm">איזו סקירה לעשות היום?</div>
+      <div class="note">שתיהן בודקות את אותם מדדים. ההבדל הוא כמה מניות נבדקות.</div>
+      <div style="display:grid;gap:14px;margin-top:18px">
+        <button class="bigbtn" id="modeQuick" style="background:#12507e">
+          ⚡ סקירה מהירה<br><span style="font-size:.62em;font-weight:600;opacity:.9">המניות הגדולות · כדקה</span>
+        </button>
+        <button class="bigbtn" id="modeDeep">
+          🔎 סקירה מעמיקה<br><span style="font-size:.62em;font-weight:600;opacity:.9">כל המניות · כחמש דקות</span>
+        </button>
+      </div>
+    </div>`;
+  document.getElementById('modeQuick').onclick=()=>renderIdeas('quick');
+  document.getElementById('modeDeep').onclick=()=>renderIdeas('deep');
+}
 
 /* Render the scheduled job's output. Same cards, same measures, but the scan
    behind it covered every stock rather than a rotating slice. */
@@ -1128,13 +1206,22 @@ function renderPrescan(pre){
 const dayKey=()=>new Date().toISOString().slice(0,10);
 const dayNum=()=>Math.floor(Date.now()/86400000);
 
-async function renderIdeas(){
-  if(ideasDone) return; ideasDone=true;
+async function renderIdeas(mode){
+  mode=mode||'quick';
+  if(ideasDone && ideasMode===mode) return;
+  ideasDone=true; ideasMode=mode;
   const E=document.getElementById('ideas');
   const say=t=>E.innerHTML=`<div class="center" style="padding:26px"><span class="spin"></span><div style="margin-top:12px;font-weight:700">${t}</div></div>`;
 
-  const cached=await cacheGet('ideas:'+dayKey(),TTL.ideas);
-  if(cached){ E.innerHTML=cached; return; }
+  const cached=await cacheGet('ideas:'+mode+':'+dayKey(),TTL.ideas);
+  if(cached){
+    E.innerHTML=cached+`<div class="card center" style="background:#f2f6fa">
+      <button class="bigbtn ${mode==='quick'?'':'sec'}" id="switchMode">
+        ${mode==='quick'?'🔎 סקירה מעמיקה של כל השוק':'⚡ סקירה מהירה'}</button></div>`;
+    const b=document.getElementById('switchMode');
+    if(b) b.onclick=()=>{ ideasDone=false; ideasMode=null; renderIdeas(mode==='quick'?'deep':'quick'); };
+    return;
+  }
 
   /* If the scheduled job has run, use its result: it scans the entire universe
      server-side instead of the small slice a browser is allowed. Fall back to
@@ -1153,104 +1240,130 @@ async function renderIdeas(){
   try{
     u=await (await fetch('data/universe.json',{cache:'no-store'})).json();
     DUAL=u.dual_listed||{};
-    SP500=new Set((u.sp500||[]).map(x=>x.toUpperCase()));
+    SP500=new Set((u.sp500||[]).map(x=>String(x).toUpperCase()));
   }catch(e){ E.innerHTML=bannerHTML('b-bad','לא הצלחנו לטעון את רשימת המניות.'); ideasDone=false; return; }
 
-  /* The data source refuses beyond roughly 330 requests in a burst, measured.
-     So every Israeli share is checked daily, and the American list is worked
-     through in rotating slices, covering all of it across a few days. */
-  // The source enforces a CUMULATIVE budget, not a rate: 587 requests got 257
-  // refused, 290 got 163 refused, and 170 got 120 refused while still inside an
-  // earlier penalty window. A browser simply cannot sweep a market against it.
-  // 60 US names plus the 70 Israeli ones is deliberately well under the ceiling;
-  // the full 517 US list is still covered, over roughly nine days.
-  const US_PER_DAY=60;
-  const usAll=u.us.map(x=>x.toUpperCase());
-  const offset=(dayNum()*US_PER_DAY)%usAll.length;
-  const usToday=usAll.slice(offset).concat(usAll.slice(0,Math.max(0,offset+US_PER_DAY-usAll.length))).slice(0,US_PER_DAY);
-  const list=u.tase.map(x=>'a/TLV-'+x).concat(usToday.map(x=>'s/'+x.toLowerCase()));
+  /* The whole universe, every day. The source refuses bursts but sustains about
+     two requests a second, so this is paced rather than trimmed. It takes a few
+     minutes, and results appear as they are found instead of at the end. */
+  const usList = mode==='deep' ? u.us : (u.n100&&u.n100.length?u.n100:u.us.slice(0,110));
+  const list=u.tase.map(x=>'a/TLV-'+x).concat(usList.map(x=>'s/'+String(x).toLowerCase()));
+  const t0=Date.now();
 
-  const quotes=(await mapLimit(list,2,async id=>{
-    const q=await quote(id); if(!q) return null;
-    const lo=q.l52,hi=q.h52;
-    return {id,q,cp:q.cp,pos:(lo&&hi&&hi>lo)?(q.p-lo)/(hi-lo)*100:null,
-            turnover:(q.p||0)*(q.v||0)*(id.startsWith('a/')?0.01:1)};
-  },(d,t)=>say(`בודק את השוק… ${d} מתוך ${t}`))).filter(Boolean);
+  const found=[];      // qualifying buys, newest first
+  const seen=new Set();
+  let checked=0;
 
-  if(quotes.length<25){
-    E.innerHTML = RATE_LIMITED
-      ? bannerHTML('b-warn','אתר הנתונים מגביל אותנו כרגע ולכן לא הספקנו לבדוק מספיק מניות. זו לא תקלה בתיק שלך. נסה שוב בעוד כשעה.')
-      : bannerHTML('b-bad','לא הצלחנו להביא מחירים כרגע. בדוק שיש חיבור לאינטרנט ונסה שוב מאוחר יותר.');
-    ideasDone=false; return;
+  const shell=(done,total,scanning)=>{
+    const pctv=Math.round(done/total*100);
+    const mins=Math.max(0,Math.round(((total-done)/2.1)/60));
+    const bar=scanning?`<div class="card" style="background:#f2f6fa">
+        <div class="whyh">בודק את השוק</div>
+        <div style="background:#dbe6f0;border-radius:999px;height:22px;overflow:hidden;border:2px solid #b9cddd">
+          <div style="background:#12507e;height:100%;width:${pctv}%"></div></div>
+        <div class="note" style="font-size:.85em"><b class="num">${done}</b> מתוך <b class="num">${total}</b> מניות
+          ${mins>0?('· עוד כ־'+mins+' דקות'):'· כמעט סיימנו'}</div>
+        <div class="note" style="font-size:.8em;opacity:.8">אפשר לעבור ללשוניות אחרות, הבדיקה ממשיכה ברקע.
+          מחר הרשימה תופיע מיד.</div>
+      </div>`:'';
+    const head=scanning
+      ? bannerHTML('b-ok','מחפשים מניות לקנייה מתוך <b>'+esc(total)+'</b> מניות בתל אביב ובארצות הברית.')
+      : bannerHTML('b-ok','נבדקו <b>'+esc(total)+'</b> מניות, '+esc(dLong.format(new Date()))+'. נמצאו <b>'+esc(found.length)+'</b> מניות לקנייה.');
+    const intro=`<div class="card" style="background:#f2f6fa">
+        <div class="whyh">איך נבנתה הרשימה?</div>
+        <ul class="whyul">
+          <li>${mode==='deep'
+              ? 'נבדקות כל <b>'+esc(u.tase.length)+'</b> המניות הישראליות ו־<b>'+esc(usList.length)+'</b> אמריקאיות ממדדי S&P 500 ונאסד"ק 100.'
+              : 'נבדקות <b>'+esc(u.tase.length)+'</b> מניות ישראליות ו־<b>'+esc(usList.length)+'</b> מהמניות הגדולות בנאסד"ק. לסריקה של כל השוק בחר <b>סקירה מעמיקה</b>.'}</li>
+          <li>לכל מועמדת נבדקים תשעה מדדים על פני חמש שנים.</li>
+          <li><b>מוצגות רק מניות לקנייה.</b> מניות למכירה מופיעות רק בתיק שלך.</li>
+        </ul>
+        <div class="whyc">⚠ רשימה מחושבת מנתוני מסחר בלבד. אינה תחזית ואינה ייעוץ.</div>
+      </div>`;
+    const cards=found.length
+      ? found.map(x=>cardHTML(x)).join('')
+      : (scanning?'':`<div class="card center"><div class="nm">היום אין מניה שעומדת בתנאים</div>
+          <div class="note">אף מניה לא עברה את כל הבדיקות. זה תקין ולא תקלה.</div></div>`);
+    return head+bar+intro+cards;
+  };
+
+  const buildCard=(x)=>{
+    const isUS=x.id.startsWith('s/');
+    const sym=x.id.replace('s/','').replace('a/TLV-','').toUpperCase();
+    const nm=isUS?(USNAMES[sym]||sym):(HEB_NAME[sym]||sym);
+    return {
+      name:nm, sub:(isUS?'נאסד"ק':'תל אביב')+' · '+sym,
+      priceNow:x.q.p, cur:isUS?'USD':'ILS',
+      lo:x.q.l52, hi:x.q.h52, v:x.v, M:x.M, risk:x.risk,
+      sp500:isUS&&SP500.has(sym),
+      targets:targetsFrom(x.M),
+      companyName:isUS?(USNAMES[sym]||nm):nm,
+      newsName:isUS?(USNAMES[sym]||nm):nm, newsHe:!isUS, anaId:x.id,
+      sources:[
+        ['מחיר ונתוני מסחר','אתר stockanalysis.com, בבורסת '+(x.q.ex||'')+', נכון ל־'+srcTime(x.q)],
+        ['חישוב המדדים','חמש שנים של מחירי סגירה ומחזורי מסחר יומיים']
+      ],
+      details:'<b>איך נבחרה:</b> נדרשו לפחות ארבעה מתוך חמישה תנאים חיוביים, ובלי סימנים לשבירת מגמה.'
+    };
+  };
+
+  /* Deep-check a promising name and, if it qualifies, put it on screen at once. */
+  const pending=[];
+  let draining=false;
+  async function drain(){
+    if(draining) return; draining=true;
+    while(pending.length){
+      const x=pending.shift();
+      if(seen.has(x.id)) continue;
+      seen.add(x.id);
+      const h=await history(x.id,'5Y');
+      await sleep(300);
+      if(!h) continue;
+      const M=analyze(h,x.q); if(!M) continue;
+      const v=verdict(M); if(!v||v.k!=='buy') continue;
+      found.push(buildCard(Object.assign({},x,{M:M,v:v,risk:riskLevel(h)})));
+      found.sort((a,b)=>(b.v.score-a.v.score)||((b.M.r3m||0)-(a.M.r3m||0)));
+      if(found.length>8) found.length=8;
+      E.innerHTML=shell(checked,list.length,true);
+    }
+    draining=false;
   }
-  const partial = RATE_LIMITED || quotes.length < list.length*0.8;
 
-  // liquid, sane, and not already at the top of its range: we are hunting buys
-  const liquid=quotes.filter(x=>x.turnover>=1e6 && Math.abs(x.cp)<15 && x.pos!=null && x.pos<80);
-  const candidates=liquid.slice()
-      .sort((a,b)=>(b.cp||0)-(a.cp||0))     // today's strength first
-      .slice(0,22);
+  await mapLimit(list,2,async id=>{
+    const q=await quote(id);
+    if(q && q.p && q.l52!=null && q.h52 && q.h52>q.l52){
+      const pos=(q.p-q.l52)/(q.h52-q.l52)*100;
+      const turn=q.p*(q.v||0)*(id.startsWith('a/')?0.01:1);
+      if(turn>=1e6 && Math.abs(q.cp||0)<15 && pos<75){
+        pending.push({id,q,pos});
+        if(pending.length>=4) drain();
+      }
+    }
+    return q;
+  },(done,total)=>{
+    checked=done;
+    if(done%10===0 || done===total) E.innerHTML=shell(done,total,true);
+  },300);
 
-  say(`בודק לעומק ${candidates.length} מניות…`);
+  await drain();
+  const partial=RATE_LIMITED;
+  const elapsed=Math.round((Date.now()-t0)/1000);
+  console.log('scan finished in',elapsed,'s, checked',checked,'found',found.length);
 
-  const deep=(await mapLimit(candidates,2,async x=>{
-    const h=await history(x.id,'5Y'); if(!h) return null;
-    const M=analyze(h,x.q); if(!M) return null;
-    const v=verdict(M);
-    if(!v||v.k!=='buy') return null;        // BUY ONLY on this tab
-    return Object.assign({},x,{M:M,v:v,risk:riskLevel(h)});
-  })).filter(Boolean);
-
-  deep.sort((a,b)=>b.v.score-a.v.score || (b.M.r3m||0)-(a.M.r3m||0));
-  const picks=deep.slice(0,5);
-  const now=new Date();
-
-  const intro=`<div class="card" style="background:#f2f6fa">
-      <div class="whyh">איך נבנתה הרשימה של היום?</div>
-      <ul class="whyul">
-        <li>נבדקו <b>${esc(quotes.length)}</b> מניות: כל המניות הנסחרות בתל אביב שברשימה, ו־${esc(usToday.length)} מניות אמריקאיות מתוך מדדי S&P 500 ונאסד"ק 100.</li>
-        <li>הרשימה האמריקאית מתחלפת מדי יום, כך שתוך כמה ימים נבדקות כל ${esc(usAll.length)} המניות.</li>
-        <li>לכל מועמדת נבדקו תשעה מדדים על פני חמש שנים: מגמה, ממוצעים נעים, תשואות, מרחק מהשיא, מחזור ותנודתיות.</li>
-        <li><b>מוצגות רק מניות לקנייה.</b> מניות למכירה מופיעות רק בתיק שלך.</li>
-      </ul>
-      <div class="whyc">⚠ זו רשימה מחושבת מנתוני מסחר בלבד, ללא מידע על חדשות או על מצב החברה. אינה תחזית ואינה ייעוץ.</div>
+  const html=shell(list.length,list.length,false)
+    +(partial?bannerHTML('b-warn','חלק מהמניות לא נבדקו כי אתר הנתונים הגביל אותנו.'):'');
+  const switcher=`<div class="card center" style="background:#f2f6fa">
+      <div class="note" style="margin-top:0">${mode==='quick'
+        ? 'רוצה לבדוק את כל השוק? זה לוקח כחמש דקות.'
+        : 'סריקה מלאה הושלמה.'}</div>
+      <button class="bigbtn ${mode==='quick'?'':'sec'}" id="switchMode" style="margin-top:12px">
+        ${mode==='quick'?'🔎 סקירה מעמיקה של כל השוק':'⚡ סקירה מהירה'}
+      </button>
     </div>`;
-
-  if(!picks.length){
-    E.innerHTML=bannerHTML('b-ok','נבדקו <b>'+esc(quotes.length)+'</b> מניות, '+esc(dLong.format(now))+'.')
-      +intro
-      +`<div class="card center"><div class="nm">היום אין מניה שעומדת בתנאים</div>
-         <div class="note">אף מניה לא עברה את כל הבדיקות היום. זה תקין ולא תקלה. עדיף לא להמליץ מאשר להמליץ על משהו חלש.</div></div>`;
-    await cacheSet('ideas:'+dayKey(),E.innerHTML);
-    return;
-  }
-
-  const html=bannerHTML(partial?'b-warn':'b-ok','נבדקו <b>'+esc(quotes.length)+'</b> מניות, '+esc(dLong.format(now))+'. נמצאו <b>'+esc(picks.length)+'</b> מניות לקנייה.'
-      +(partial?' חלק מהמניות לא נבדקו היום כי אתר הנתונים הגביל אותנו.':''))
-    +intro
-    +picks.map(x=>{
-      const isUS=x.id.startsWith('s/');
-      const sym=x.id.replace('s/','').replace('a/TLV-','').toUpperCase();
-      const nm=isUS?(USNAMES[sym]||sym):(HEB_NAME[sym]||sym);
-      const o={
-        name:nm, sub:(isUS?'נאסד"ק':'תל אביב')+' · '+sym,
-        priceNow:x.q.p, cur:isUS?'USD':'ILS',
-        lo:x.q.l52, hi:x.q.h52, v:x.v, M:x.M, risk:x.risk,
-        sp500:isUS&&SP500.has(sym),
-        targets:targetsFrom(x.M),
-        companyName:isUS?(USNAMES[sym]||nm):nm,
-        newsName:isUS?(USNAMES[sym]||nm):nm, newsHe:!isUS, anaId:x.id,
-        sources:[
-          ['מחיר ונתוני מסחר','אתר stockanalysis.com, בבורסת '+(x.q.ex||'')+', נכון ל־'+srcTime(x.q)],
-          ['חישוב המדדים','חמש שנים של מחירי סגירה ומחזורי מסחר יומיים']
-        ],
-        details:'<b>איך נבחרה:</b> נדרשו לפחות ארבעה מתוך חמישה תנאים חיוביים, ובלי סימנים לשבירת מגמה. '
-               +'המדדים המלאים מוצגים בכרטיס.'
-      };
-      return cardHTML(o);
-    }).join('');
-  E.innerHTML=html;
-  await cacheSet('ideas:'+dayKey(),html);
+  E.innerHTML=html+switcher;
+  await cacheSet('ideas:'+mode+':'+dayKey(),html);
+  const b=document.getElementById('switchMode');
+  if(b) b.onclick=()=>{ ideasDone=false; ideasMode=null; renderIdeas(mode==='quick'?'deep':'quick'); };
 }
 
 /* ============================================================
