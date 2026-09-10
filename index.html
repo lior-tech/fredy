@@ -502,6 +502,14 @@ async function cacheSet(key,d){
 
 let rlHits=0;
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+/* Adaptive pace. Measured: a steady 2.2 requests a second holds for a few hundred
+   requests, then the source starts refusing (587 in one run gave 122 refusals from
+   about request 400). A fixed speed is always either too slow or too fast, so the
+   gap widens sharply on every refusal and narrows slowly on success. The scan
+   finishes later on a busy day instead of giving up on part of the market. */
+const PACE={gap:300,min:300,max:5000};
+function paceBack(){ PACE.gap=Math.min(PACE.max, Math.round(PACE.gap*1.7+250)); }
+function paceOK(){ PACE.gap=Math.max(PACE.min, Math.round(PACE.gap*0.96)); }
 
 async function quote(id){
   if(pxCache.has(id)) return pxCache.get(id);
@@ -509,15 +517,16 @@ async function quote(id){
   if(c!==undefined){ pxCache.set(id,c); return c; }
   // Give up only once refusals dominate. A single 429 used to abort the whole
   // scan, which is why the tab showed nothing at all.
-  if(rlHits>120){ RATE_LIMITED=true; return null; }
-  for(let attempt=0;attempt<2;attempt++){
+  if(rlHits>600){ RATE_LIMITED=true; return null; }   // only if the source is truly shut
+  for(let attempt=0;attempt<4;attempt++){
     try{
       const r=await fetch('https://stockanalysis.com/api/quotes/'+id);
       if(r.status===429){
-        rlHits++; RATE_LIMITED=true;
-        if(attempt===0){ await sleep(1200+Math.random()*800); continue; }
-        return null;
+        rlHits++; paceBack();
+        await sleep(PACE.gap*2+Math.random()*600);
+        continue;
       }
+      paceOK();
       const j=await r.json();
       if(j&&j.status===200&&j.data&&typeof j.data.p==='number'){
         pxCache.set(id,j.data); await cacheSet('q:'+id,j.data); return j.data;
@@ -525,6 +534,7 @@ async function quote(id){
       break;
     }catch(e){ break; }
   }
+  RATE_LIMITED = RATE_LIMITED || rlHits>0;
   pxCache.set(id,null); return null;
 }
 const histCache=new Map();
@@ -533,7 +543,7 @@ async function history(id,range){
   if(histCache.has(k)) return histCache.get(k);
   const c=await cacheGet('h:'+k,TTL.hist);
   if(c!==undefined){ histCache.set(k,c); return c; }
-  if(rlHits>200) return null;
+  if(rlHits>600) return null;
   const out=await historyFetch(id,range);
   histCache.set(k,out); if(out) await cacheSet('h:'+k,out);
   return out;
@@ -541,14 +551,15 @@ async function history(id,range){
 async function historyFetch(id,range){
   // A refused history used to discard the stock silently, which is how a whole
   // scan could finish having analysed nothing at all. Back off and try again.
-  for(let attempt=0;attempt<3;attempt++){
+  for(let attempt=0;attempt<4;attempt++){
     try{
       const r=await fetch('https://stockanalysis.com/api/symbol/'+id+'/history?range='+range);
       if(r.status===429){
-        rlHits++;
-        await sleep(1500*(attempt+1)+Math.random()*700);
+        rlHits++; paceBack();
+        await sleep(PACE.gap*2+Math.random()*700);
         continue;
       }
+      paceOK();
       const j=await r.json();
       if(j&&j.status===200&&Array.isArray(j.data))return j.data;
       return null;
@@ -1260,7 +1271,7 @@ async function mapLimit(items,limit,fn,onTick,gapMs){
       const k=i++;
       out[k]=await fn(items[k],k);
       done++; if(onTick) onTick(done,items.length,out);
-      if(gap) await sleep(gap);
+      if(gap) await sleep(Math.max(gap, PACE.gap));
     }
   }));
   return out;
@@ -1433,7 +1444,8 @@ async function renderIdeas(mode){
 
   const shell=(done,total,scanning)=>{
     const pctv=Math.round(done/total*100);
-    const mins=Math.max(0,Math.round(((total-done)/2.1)/60));
+    const perReq=(PACE.gap+350)/2000;                       // two workers, pause + request time
+    const mins=Math.max(0,Math.round(((total-done)*perReq)/60));
     const bar=scanning?`<div class="card" style="background:#f2f6fa">
         <div class="whyh">בודק את השוק</div>
         <div style="background:#dbe6f0;border-radius:999px;height:22px;overflow:hidden;border:2px solid #b9cddd">
