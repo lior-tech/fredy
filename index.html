@@ -509,7 +509,7 @@ async function quote(id){
   if(c!==undefined){ pxCache.set(id,c); return c; }
   // Give up only once refusals dominate. A single 429 used to abort the whole
   // scan, which is why the tab showed nothing at all.
-  if(rlHits>40){ RATE_LIMITED=true; return null; }
+  if(rlHits>120){ RATE_LIMITED=true; return null; }
   for(let attempt=0;attempt<2;attempt++){
     try{
       const r=await fetch('https://stockanalysis.com/api/quotes/'+id);
@@ -533,17 +533,27 @@ async function history(id,range){
   if(histCache.has(k)) return histCache.get(k);
   const c=await cacheGet('h:'+k,TTL.hist);
   if(c!==undefined){ histCache.set(k,c); return c; }
-  if(rlHits>60) return null;
+  if(rlHits>200) return null;
   const out=await historyFetch(id,range);
   histCache.set(k,out); if(out) await cacheSet('h:'+k,out);
   return out;
 }
 async function historyFetch(id,range){
-  try{
-    const r=await fetch('https://stockanalysis.com/api/symbol/'+id+'/history?range='+range);
-    const j=await r.json();
-    if(j&&j.status===200&&Array.isArray(j.data))return j.data;
-  }catch(e){}
+  // A refused history used to discard the stock silently, which is how a whole
+  // scan could finish having analysed nothing at all. Back off and try again.
+  for(let attempt=0;attempt<3;attempt++){
+    try{
+      const r=await fetch('https://stockanalysis.com/api/symbol/'+id+'/history?range='+range);
+      if(r.status===429){
+        rlHits++;
+        await sleep(1500*(attempt+1)+Math.random()*700);
+        continue;
+      }
+      const j=await r.json();
+      if(j&&j.status===200&&Array.isArray(j.data))return j.data;
+      return null;
+    }catch(e){ await sleep(600); }
+  }
   return null;
 }
 
@@ -1279,6 +1289,7 @@ async function renderIdeas(mode){
      two requests a second, so this is paced rather than trimmed. It takes a few
      minutes, and results appear as they are found instead of at the end. */
   const usList = mode==='deep' ? u.us : (u.n100&&u.n100.length?u.n100:u.us.slice(0,110));
+  const DEEP_MAX = mode==='deep' ? 45 : 28;
   const list=u.tase.map(x=>'a/TLV-'+x).concat(usList.map(x=>'s/'+String(x).toLowerCase()));
   const t0=Date.now();
 
@@ -1367,6 +1378,7 @@ async function renderIdeas(mode){
       found.sort((a,b)=>(b.v.score-a.v.score)||((b.M.fresh||0)-(a.M.fresh||0))||((b.M.r3m||0)-(a.M.r3m||0)));
       if(found.length>8) found.length=8;
       E.innerHTML=shell(checked,list.length,true);
+      if(found.length>=6 && found.filter(z=>z.v.score>=4).length>=5) pending.length=0;
     }
   }
   /* A single in-flight drain, but callers can genuinely wait for it. The old
@@ -1381,14 +1393,16 @@ async function renderIdeas(mode){
     while(pending.length || drainer){ await kickDrain(); }
   }
 
+  const quotesOK=[];
   await mapLimit(list,2,async id=>{
     const q=await quote(id);
+    if(q) quotesOK.push(id);
     if(q && q.p && q.l52!=null && q.h52 && q.h52>q.l52){
       const pos=(q.p-q.l52)/(q.h52-q.l52)*100;
       const turn=q.p*(q.v||0)*(id.startsWith('a/')?0.01:1);
       if(turn>=1e6 && Math.abs(q.cp||0)<15 && pos<85){
         pending.push({id,q,pos});
-        if(pending.length>=4) kickDrain();
+        // deep checks run after the price sweep, never alongside it
       }
     }
     return q;
@@ -1397,12 +1411,28 @@ async function renderIdeas(mode){
     if(done%10===0 || done===total) E.innerHTML=shell(done,total,true);
   },300);
 
+  /* Stage two. Only the most promising names get a five-year history pulled,
+     because each one is another request and the source only tolerates about two
+     a second in total. Ranked first on a cheap proxy so the best get checked. */
+  pending.sort((a,b)=>{
+    const sc=(x)=>{
+      let k=0;
+      if(x.pos>=20 && x.pos<=70) k+=2;      // room to rise, not at the floor
+      if((x.q.cp||0)>0) k+=1;               // firm today
+      const vr=(x.q.v||0);                  // heavier trade than usual is interesting
+      if(vr) k+=0;
+      return k;
+    };
+    return sc(b)-sc(a) || (b.q.cp||0)-(a.q.cp||0);
+  });
+  if(pending.length>DEEP_MAX) pending.length=DEEP_MAX;
+  E.innerHTML=shell(checked,list.length,true);
   await drainCompletely();
   const partial=RATE_LIMITED;
   const elapsed=Math.round((Date.now()-t0)/1000);
   console.log('scan finished in',elapsed,'s, checked',checked,'found',found.length);
 
-  const html=shell(list.length,list.length,false)
+  const html=shell(quotesOK.length,quotesOK.length,false)
     +(partial?bannerHTML('b-warn','חלק מהמניות לא נבדקו כי אתר הנתונים הגביל אותנו.'):'');
   const switcher=`<div class="card center" style="background:#f2f6fa">
       <div class="note" style="margin-top:0">${mode==='quick'
