@@ -1794,6 +1794,22 @@ document.addEventListener('toggle',e=>{
 /* ============================================================
    Boot
    ============================================================ */
+/* Fredy opens this as an installed app and will never think to clear a cache.
+   So the page checks for a newer version itself and reloads once if it finds one.
+   Guarded by sessionStorage so it can never loop. */
+const BUILD='20261013190337';
+(async function selfUpdate(){
+  try{
+    const r=await fetch('data/version.json',{cache:'no-store'});
+    if(!r.ok) return;
+    const j=await r.json();
+    if(j && j.build && j.build!==BUILD && sessionStorage.getItem('upd')!==j.build){
+      sessionStorage.setItem('upd', j.build);
+      location.reload();
+    }
+  }catch(e){}
+})();
+
 (async function(){
   try{ if(navigator.storage&&navigator.storage.persist) await navigator.storage.persist(); }catch(e){}
   await DB.open().catch(()=>{});
