@@ -96,6 +96,24 @@ def buy_score(M):
         return {"score": b, "of": 5, "reasons": reasons}
     return None
 
+def load_existing():
+    """Resume a previous run. Anything collected today is kept, so a run that is
+    cut short is never wasted and the next one simply continues."""
+    prices, measures = {}, {}
+    today = time.strftime("%Y-%m-%d", time.gmtime())
+    for name, target in (("data/prices.json", prices), ("data/measures.json", measures)):
+        try:
+            j = json.load(open(name))
+            if (j.get("generated_at") or "")[:10] == today:
+                target.update(j.get("data") or {})
+        except Exception:
+            pass
+    if prices or measures:
+        print("resuming: %d prices, %d measures already collected today"
+              % (len(prices), len(measures)), flush=True)
+    return prices, measures
+
+
 def publish(prices, measures):
     """Write price and measure files next to the page.
 
@@ -117,14 +135,17 @@ def main():
     ids = ["a/TLV-" + x for x in tase_all] + ["s/" + x.lower() for x in uni["us"]]
     print("scanning %d symbols" % len(ids), flush=True)
 
-    prices = {}
-    measures = {}
+    prices, measures = load_existing()
     t_start = time.time()
     stage1 = []
     for i, sid in enumerate(ids):
+        if sid in prices:
+            continue                      # already collected today
         q = quote(sid)
         if q:
             prices[sid] = q
+        if len(prices) % 150 == 0:
+            publish(prices, measures)     # checkpoint, so nothing is ever lost
         if q and q.get("p") and q.get("l52") and q.get("h52") and q["h52"] > q["l52"]:
             pos = (q["p"] - q["l52"]) / (q["h52"] - q["l52"]) * 100
             turn = q["p"] * (q.get("v") or 0) * (0.01 if sid.startswith("a/") else 1)
@@ -134,6 +155,7 @@ def main():
         if (i + 1) % 50 == 0:
             print("  %d/%d, %d candidates" % (i + 1, len(ids), len(stage1)), flush=True)
 
+    publish(prices, measures)
     print("stage 1 done: %d candidates, %d prices" % (len(stage1), len(prices)), flush=True)
 
     # Measures for the whole market, ordered by turnover so the names he is most
@@ -142,7 +164,11 @@ def main():
         prices.items(),
         key=lambda kv: -((kv[1].get("p") or 0) * (kv[1].get("v") or 0) * (0.01 if kv[0].startswith("a/") else 1)))
     for sid, q in by_liquidity:
-        if time.time() - t_start > 2100:          # 35 minutes, leaves room to commit
+        if sid in measures:
+            continue
+        if len(measures) % 60 == 0 and measures:
+            publish(prices, measures)
+        if time.time() - t_start > 1500:          # 35 minutes, leaves room to commit
             print("measure budget reached at %d symbols" % len(measures), flush=True)
             break
         rows = history(sid)
