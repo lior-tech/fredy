@@ -548,6 +548,13 @@ async function loadPublished(){
     }catch(e){}
   }
 }
+/* Prefer measures computed by the daily scan. They come from the same page's own
+   address, so they are never blocked, and they save his browser pulling five
+   years of history per holding. */
+function measuresFor(id,q,rows){
+  if(PUB.measures && PUB.measures[id]) return PUB.measures[id];
+  return analyze(rows,q);
+}
 function pricesUnavailableHTML(){
   return bannerHTML('b-warn',
     'שירות המחירים חסם לאחרונה גישה מדפדפנים, ולכן איננו יכולים להביא מחירים כרגע. '
@@ -918,6 +925,16 @@ function measuresHTML(M,cur){
 /* Risk level, from how much the share actually moves on an average day.
    Thresholds calibrated on the measured distribution across the universe:
    median 1.69%/day, 25th percentile 1.42%, 75th percentile 2.50%. */
+function riskFromMeasures(M){
+  const avg=M&&M.dailyMove;
+  if(avg==null) return null;
+  if(avg<1.5)  return {k:'low', txt:'סיכון נמוך', bg:'bg-g', avg:avg,
+    why:'המניה זזה בממוצע '+nfNum.format(avg)+'% ביום. זו תנודתיות נמוכה יחסית.'};
+  if(avg<2.8)  return {k:'mid', txt:'סיכון בינוני', bg:'bg-a', avg:avg,
+    why:'המניה זזה בממוצע '+nfNum.format(avg)+'% ביום. זה טווח רגיל למניה גדולה.'};
+  return {k:'high', txt:'סיכון גבוה', bg:'bg-r', avg:avg,
+    why:'המניה זזה בממוצע '+nfNum.format(avg)+'% ביום. זו מניה תנודתית, המחיר יכול לקפוץ ולצנוח מהר.'};
+}
 function riskLevel(rows){
   if(!rows||rows.length<40) return null;
   const r=rows.slice().sort((a,b)=>a.t<b.t?-1:1).slice(-60);
@@ -1190,9 +1207,10 @@ async function renderPortfolio(){
     if(res.priceable&&res.id){
       const q=await quote(res.id,true);
       if(q){
-        const hh=await history(res.id,'5Y',true);
-        o.risk=riskLevel(hh);
-        o.M=analyze(hh,q);
+        const pre=PUB.measures && PUB.measures[res.id];
+        const hh=pre?null:await history(res.id,'5Y',true);
+        o.risk=pre?riskFromMeasures(pre):riskLevel(hh);
+        o.M=measuresFor(res.id,q,hh);
         o.priceNow=q.p; o.cur=(res.market==='US')?'USD':'ILS';
         if(q._stale) o.priceAsOf='נכון ל־'+dLong.format(new Date(q._asOf||Date.now()))+', ללא שינוי מאז';
         o.lo=q.l52; o.hi=q.h52;
@@ -1235,7 +1253,8 @@ async function renderPortfolio(){
     cards.push({o,rank:o.v?({r:0,a:1,g:2})[o.v.k]:3});
   }
   cards.sort((a,b)=>a.rank-b.rank);
-  H.innerHTML=(PRICES_BLOCKED ? pricesUnavailableHTML()
+  const gotPrices = cards.some(c=>c.o.priceNow!=null && !c.o.priceAsOf);
+  H.innerHTML=((PRICES_BLOCKED && !gotPrices) ? pricesUnavailableHTML()
       : RATE_LIMITED
       ? bannerHTML('b-warn','אתר המחירים חוסם אותנו זמנית מרוב בקשות, ולכן חלק מהניתוחים לא מוצגים. <b>הנתונים מהבנק למטה נכונים ומלאים.</b> נסה שוב בעוד כשעה.')
       : '')
@@ -1731,8 +1750,10 @@ async function checkStock(id,nm){
   o.details=`<b>הכלל:</b> הרצפה והתקרה הן המחיר הנמוך והגבוה ביותר ב־52 השבועות האחרונים.`;
   o.companyName = isUS ? (USNAMES[id.replace('s/','').toUpperCase()]||nm) : nm;
   o.newsName=o.companyName; o.newsHe=!isUS;
-  const hh=await history(id,'5Y',true); o.risk=riskLevel(hh); o.anaId=id;
-  o.M=analyze(hh,q); o.v=verdict(o.M);
+  const pre=PUB.measures && PUB.measures[id];
+  const hh=pre?null:await history(id,'5Y',true);
+  o.risk=pre?riskFromMeasures(pre):riskLevel(hh); o.anaId=id;
+  o.M=measuresFor(id,q,hh); o.v=verdict(o.M);
   if(isUS) o.sp500=SP500.has(id.replace('s/','').toUpperCase());
   R.innerHTML=cardHTML(o);
   // open it straight away here: he asked for this one specifically
