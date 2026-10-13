@@ -23,11 +23,11 @@ def get(url, tries=3):
                 continue
             return None
         except Exception:
-            time.sleep(2 + a * 3)
+            time.sleep(1)
     return None
 
 def quote(sid):
-    d = get("%s/api/quotes/%s" % (BASE, sid))
+    d = get("%s/api/quotes/%s" % (BASE, sid), tries=2)
     return d.get("data") if d and d.get("status") == 200 else None
 
 def history(sid):
@@ -96,6 +96,29 @@ def buy_score(M):
         return {"score": b, "of": 5, "reasons": reasons}
     return None
 
+SKIP_FILE = "data/.scanskip.json"
+
+
+def load_skips():
+    """Symbols that returned nothing today. Without this, every run retries all
+    ~350 dead tickers with backoff and never reaches the measures at all."""
+    try:
+        j = json.load(open(SKIP_FILE))
+        if j.get("date") == time.strftime("%Y-%m-%d", time.gmtime()):
+            return set(j.get("ids") or [])
+    except Exception:
+        pass
+    return set()
+
+
+def save_skips(skips):
+    try:
+        json.dump({"date": time.strftime("%Y-%m-%d", time.gmtime()), "ids": sorted(skips)},
+                  open(SKIP_FILE, "w"))
+    except Exception:
+        pass
+
+
 def load_existing():
     """Resume a previous run. Anything collected today is kept, so a run that is
     cut short is never wasted and the next one simply continues."""
@@ -141,15 +164,24 @@ def main():
     print("scanning %d symbols" % len(ids), flush=True)
 
     prices, measures = load_existing()
+    skips = load_skips()
+    if skips:
+        print("skipping %d symbols that returned nothing today" % len(skips), flush=True)
     t_start = time.time()
     stage1 = []
     for i, sid in enumerate(ids):
+        if sid in skips:
+            continue                      # already known to return nothing today
         if sid in prices:
             q = prices[sid]               # already collected today, reuse it
         else:
             q = quote(sid)
             if q:
                 prices[sid] = q
+            else:
+                skips.add(sid)
+                if len(skips) % 25 == 0:
+                    save_skips(skips)
             if len(prices) % 150 == 0:
                 publish(prices, measures) # checkpoint, so nothing is ever lost
             time.sleep(0.2)
@@ -161,6 +193,7 @@ def main():
         if (i + 1) % 50 == 0:
             print("  %d/%d, %d candidates" % (i + 1, len(ids), len(stage1)), flush=True)
 
+    save_skips(skips)
     publish(prices, measures)
     print("stage 1 done: %d candidates, %d prices" % (len(stage1), len(prices)), flush=True)
 
@@ -170,7 +203,7 @@ def main():
         prices.items(),
         key=lambda kv: -((kv[1].get("p") or 0) * (kv[1].get("v") or 0) * (0.01 if kv[0].startswith("a/") else 1)))
     for sid, q in by_liquidity:
-        if sid in measures:
+        if sid in measures or ("M:" + sid) in skips:
             continue
         if len(measures) % 60 == 0 and measures:
             publish(prices, measures)
@@ -182,6 +215,9 @@ def main():
         M = analyze(rows, q)
         if M:
             measures[sid] = M
+        else:
+            skips.add("M:" + sid)
+            save_skips(skips)
     publish(prices, measures)
 
     stage1.sort(key=lambda x: -(x[1].get("cp") or 0))

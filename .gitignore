@@ -4,3 +4,4 @@
 *.csv
 !data/tase_master.csv
 workflows/
+data/.scanskip.json
