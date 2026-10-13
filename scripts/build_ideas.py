@@ -121,6 +121,11 @@ def publish(prices, measures):
     the page, so the provider's block on cross-origin calls does not apply.
     """
     now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    # Only the fields the page actually reads. The raw quotes carry roughly
+    # twenty five keys each and the file was heading past half a megabyte,
+    # which his browser would have to download before showing anything.
+    keep = ("p", "cp", "cl", "l52", "h52", "ex", "v", "u", "ts", "ms")
+    prices = {k: {f: v[f] for f in keep if f in v} for k, v in prices.items()}
     json.dump({"generated_at": now, "data": prices},
               open("data/prices.json", "w"), ensure_ascii=False, separators=(",", ":"))
     json.dump({"generated_at": now, "data": measures},
@@ -140,18 +145,19 @@ def main():
     stage1 = []
     for i, sid in enumerate(ids):
         if sid in prices:
-            continue                      # already collected today
-        q = quote(sid)
-        if q:
-            prices[sid] = q
-        if len(prices) % 150 == 0:
-            publish(prices, measures)     # checkpoint, so nothing is ever lost
+            q = prices[sid]               # already collected today, reuse it
+        else:
+            q = quote(sid)
+            if q:
+                prices[sid] = q
+            if len(prices) % 150 == 0:
+                publish(prices, measures) # checkpoint, so nothing is ever lost
+            time.sleep(0.2)
         if q and q.get("p") and q.get("l52") and q.get("h52") and q["h52"] > q["l52"]:
             pos = (q["p"] - q["l52"]) / (q["h52"] - q["l52"]) * 100
             turn = q["p"] * (q.get("v") or 0) * (0.01 if sid.startswith("a/") else 1)
             if turn >= 1e6 and abs(q.get("cp") or 0) < 15 and pos < 80:
                 stage1.append((sid, q, pos))
-        time.sleep(0.35)
         if (i + 1) % 50 == 0:
             print("  %d/%d, %d candidates" % (i + 1, len(ids), len(stage1)), flush=True)
 
@@ -172,7 +178,7 @@ def main():
             print("measure budget reached at %d symbols" % len(measures), flush=True)
             break
         rows = history(sid)
-        time.sleep(0.45)
+        time.sleep(0.3)
         M = analyze(rows, q)
         if M:
             measures[sid] = M
