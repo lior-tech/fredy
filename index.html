@@ -501,6 +501,29 @@ async function cacheSet(key,d){
 }
 
 let rlHits=0;
+/* The price source stopped sending access-control-allow-origin in Oct 2026, so a
+   browser now refuses every call to it. Two consequences handled here: say so
+   plainly rather than implying his holdings have no analysis, and prefer data
+   published next to this page, which is same-origin and so never blocked. */
+let PRICES_BLOCKED=false;
+const PUB={prices:null,measures:null,at:0};
+async function loadPublished(){
+  for(const [k,f] of [['prices','data/prices.json'],['measures','data/measures.json']]){
+    try{
+      const r=await fetch(f,{cache:'no-store'});
+      if(!r.ok) continue;
+      const j=await r.json();
+      const age=(Date.now()-Date.parse(j.generated_at||0))/36e5;
+      if(j && j.data && age<40){ PUB[k]=j.data; PUB.at=Date.parse(j.generated_at); }
+    }catch(e){}
+  }
+}
+function pricesUnavailableHTML(){
+  return bannerHTML('b-warn',
+    'שירות המחירים חסם לאחרונה גישה מדפדפנים, ולכן איננו יכולים להביא מחירים כרגע. '
+    +'<b>זו לא תקלה במחשב שלך ולא בקובץ שלך.</b> הנתונים מהבנק נכונים ומלאים. '
+    +'ליאור יודע ומטפל בזה.');
+}
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 /* Adaptive pace. Measured: a steady 2.2 requests a second holds for a few hundred
    requests, then the source starts refusing (587 in one run gave 122 refusals from
@@ -513,8 +536,10 @@ function paceOK(){ PACE.gap=Math.max(PACE.min, Math.round(PACE.gap*0.96)); }
 
 async function quote(id){
   if(pxCache.has(id)) return pxCache.get(id);
+  if(PUB.prices && PUB.prices[id]){ pxCache.set(id,PUB.prices[id]); return PUB.prices[id]; }
   const c=await cacheGet('q:'+id,TTL.quote);
   if(c!==undefined){ pxCache.set(id,c); return c; }
+  if(PRICES_BLOCKED) return null;
   // Give up only once refusals dominate. A single 429 used to abort the whole
   // scan, which is why the tab showed nothing at all.
   if(rlHits>600){ RATE_LIMITED=true; return null; }   // only if the source is truly shut
@@ -532,7 +557,7 @@ async function quote(id){
         pxCache.set(id,j.data); await cacheSet('q:'+id,j.data); return j.data;
       }
       break;
-    }catch(e){ break; }
+    }catch(e){ PRICES_BLOCKED=true; break; }
   }
   RATE_LIMITED = RATE_LIMITED || rlHits>0;
   pxCache.set(id,null); return null;
@@ -563,7 +588,7 @@ async function historyFetch(id,range){
       const j=await r.json();
       if(j&&j.status===200&&Array.isArray(j.data))return j.data;
       return null;
-    }catch(e){ await sleep(600); }
+    }catch(e){ PRICES_BLOCKED=true; return null; }
   }
   return null;
 }
@@ -1153,7 +1178,8 @@ async function renderPortfolio(){
     cards.push({o,rank:o.v?({r:0,a:1,g:2})[o.v.k]:3});
   }
   cards.sort((a,b)=>a.rank-b.rank);
-  H.innerHTML=(RATE_LIMITED
+  H.innerHTML=(PRICES_BLOCKED ? pricesUnavailableHTML()
+      : RATE_LIMITED
       ? bannerHTML('b-warn','אתר המחירים חוסם אותנו זמנית מרוב בקשות, ולכן חלק מהניתוחים לא מוצגים. <b>הנתונים מהבנק למטה נכונים ומלאים.</b> נסה שוב בעוד כשעה.')
       : '')
     + cards.map(c=>cardHTML(c.o)).join('');
@@ -1550,6 +1576,14 @@ async function renderIdeas(mode){
     if(done%10===0 || done===total) E.innerHTML=shell(done,total,true);
   },300);
 
+  if(PRICES_BLOCKED && quotesOK.length<25){
+    E.innerHTML=pricesUnavailableHTML()
+      +`<div class="card center"><div class="nm">לא ניתן לחפש מניות כרגע</div>
+        <div class="note">זו תקלה בשירות המחירים החיצוני, לא במחשב שלך.
+        הלשונית <b>התיק שלי</b> תקינה לחלוטין.</div></div>`;
+    ideasDone=false; ideasMode=null; return;
+  }
+
   /* Stage two. Only the most promising names get a five-year history pulled,
      because each one is another request and the source only tolerates about two
      a second in total. Ranked first on a cheap proxy so the best get checked. */
@@ -1680,6 +1714,7 @@ document.addEventListener('toggle',e=>{
 (async function(){
   try{ if(navigator.storage&&navigator.storage.persist) await navigator.storage.persist(); }catch(e){}
   await DB.open().catch(()=>{});
+  await loadPublished();
   await loadTase();
   if(DB.db){
     PORT=await DB.get('portfolio');
