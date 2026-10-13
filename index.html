@@ -488,6 +488,14 @@ let RATE_LIMITED=false;
 const pxCache=new Map();
 const TTL={quote:6*60*60*1000, hist:36*60*60*1000, ideas:12*60*60*1000};
 
+async function cacheGetAny(key){
+  try{
+    if(!DB.db) return null;
+    const v=await DB.get('c:'+key);
+    if(v && v.d) return v;
+  }catch(e){}
+  return null;
+}
 async function cacheGet(key,ttl){
   try{
     if(!DB.db) return undefined;
@@ -506,6 +514,28 @@ let rlHits=0;
    plainly rather than implying his holdings have no analysis, and prefer data
    published next to this page, which is same-origin and so never blocked. */
 let PRICES_BLOCKED=false;
+/* The provider blocks browsers, so a relay is the only way to reach it from his
+   machine. Relays are unreliable under load, so this is strictly budgeted: it is
+   meant for his own holdings and the stock checker, never for a market scan. */
+let relayBudget=140;
+let relayProbed=false;
+async function viaRelayJSON(url){
+  if(relayBudget<=0) return null;
+  relayBudget--;
+  /* Probe once. If the relay cannot serve the first request, stop trying for the
+     rest of the session: otherwise every holding waits several seconds for a
+     service that is already known to be down, and he sits watching a spinner. */
+  // 3.5s, not 9s: a slow relay must never make him wait. Measured 35-80s per
+  // stock check when three relays were each given nine seconds to fail.
+  const txt=await viaRelay(url,3500);
+  if(!txt){ if(!relayProbed) relayBudget=0; relayProbed=true; return null; }
+  relayProbed=true;
+  try{
+    const j=JSON.parse(txt);
+    if(j && j.status===200 && j.data) return j;
+  }catch(e){}
+  return null;
+}
 const PUB={prices:null,measures:null,at:0};
 async function loadPublished(){
   for(const [k,f] of [['prices','data/prices.json'],['measures','data/measures.json']]){
@@ -534,12 +564,12 @@ const PACE={gap:300,min:300,max:5000};
 function paceBack(){ PACE.gap=Math.min(PACE.max, Math.round(PACE.gap*1.7+250)); }
 function paceOK(){ PACE.gap=Math.max(PACE.min, Math.round(PACE.gap*0.96)); }
 
-async function quote(id){
+async function quote(id,allowRelay){
   if(pxCache.has(id)) return pxCache.get(id);
   if(PUB.prices && PUB.prices[id]){ pxCache.set(id,PUB.prices[id]); return PUB.prices[id]; }
   const c=await cacheGet('q:'+id,TTL.quote);
   if(c!==undefined){ pxCache.set(id,c); return c; }
-  if(PRICES_BLOCKED) return null;
+  if(PRICES_BLOCKED && !allowRelay) return null;
   // Give up only once refusals dominate. A single 429 used to abort the whole
   // scan, which is why the tab showed nothing at all.
   if(rlHits>600){ RATE_LIMITED=true; return null; }   // only if the source is truly shut
@@ -559,17 +589,35 @@ async function quote(id){
       break;
     }catch(e){ PRICES_BLOCKED=true; break; }
   }
+  if(PRICES_BLOCKED && allowRelay){
+    const j=await viaRelayJSON('https://stockanalysis.com/api/quotes/'+id);
+    if(j && typeof j.data.p==='number'){
+      pxCache.set(id,j.data); await cacheSet('q:'+id,j.data); return j.data;
+    }
+  }
+  /* Nothing fresh. Rather than show him nothing, use the last price we ever saw
+     and stamp it with its date, so the figure on screen is always real and he can
+     see how old it is. */
+  const old=await cacheGetAny('q:'+id);
+  if(old && old.d && typeof old.d.p==='number'){
+    const st=Object.assign({},old.d,{_stale:true,_asOf:old.at});
+    pxCache.set(id,st); return st;
+  }
   RATE_LIMITED = RATE_LIMITED || rlHits>0;
   pxCache.set(id,null); return null;
 }
 const histCache=new Map();
-async function history(id,range){
+async function history(id,range,allowRelay){
   const k=id+'|'+range;
   if(histCache.has(k)) return histCache.get(k);
   const c=await cacheGet('h:'+k,TTL.hist);
   if(c!==undefined){ histCache.set(k,c); return c; }
   if(rlHits>600) return null;
-  const out=await historyFetch(id,range);
+  let out=await historyFetch(id,range);
+  if(!out && PRICES_BLOCKED && allowRelay){
+    const j=await viaRelayJSON('https://stockanalysis.com/api/symbol/'+id+'/history?range='+range);
+    if(j && Array.isArray(j.data)) out=j.data;
+  }
   histCache.set(k,out); if(out) await cacheSet('h:'+k,out);
   return out;
 }
@@ -893,7 +941,7 @@ function riskLevel(rows){
    down (connection timeouts, not errors) while the underlying sources answered in
    under a second. So every relay call gets a hard timeout and we try more than one.
    Without the timeout the browser hangs and the section spins forever. */
-const RELAYS=[
+const RELAYS=[  // first one only, for prices; the rest stay for news
   u=>'https://api.allorigins.win/raw?url='+encodeURIComponent(u),
   u=>'https://api.codetabs.com/v1/proxy?quest='+encodeURIComponent(u),
   u=>'https://api.allorigins.win/get?url='+encodeURIComponent(u)
@@ -1051,7 +1099,7 @@ function cardHTML(o){
     const s=o.plILS>=0?'pos':'neg';
     cells+=`<div class="cell"><div class="k">בשקלים</div><div class="v ${s} num">${esc(money(Math.abs(o.plILS),'ILS'))}</div></div>`;
   }
-  if(o.priceNow!=null) cells+=`<div class="cell"><div class="k">מחיר היום</div><div class="v num">${esc(nfNum.format(o.priceNow))}${o.cur==='USD'?' $':' אג׳'}</div></div>`;
+  if(o.priceNow!=null) cells+=`<div class="cell"><div class="k">${esc(o.priceAsOf?'מחיר אחרון ידוע':'מחיר היום')}</div><div class="v num">${esc(nfNum.format(o.priceNow))}${o.cur==='USD'?' $':' אג׳'}</div>${o.priceAsOf?`<div class="k" style="margin-top:4px;color:var(--amber)">${esc(o.priceAsOf)}</div>`:''}</div>`;
 
   let extra='';
   if(o.lo!=null&&o.hi!=null&&o.priceNow!=null) extra+=rangeBar(o.priceNow,o.lo,o.hi);
@@ -1140,12 +1188,13 @@ async function renderPortfolio(){
       +(PORT.fileDateTxt?` מתאריך ${esc(PORT.fileDateTxt)}`:'')+`.`;
 
     if(res.priceable&&res.id){
-      const q=await quote(res.id);
+      const q=await quote(res.id,true);
       if(q){
-        const hh=await history(res.id,'5Y');
+        const hh=await history(res.id,'5Y',true);
         o.risk=riskLevel(hh);
         o.M=analyze(hh,q);
         o.priceNow=q.p; o.cur=(res.market==='US')?'USD':'ILS';
+        if(q._stale) o.priceAsOf='נכון ל־'+dLong.format(new Date(q._asOf||Date.now()))+', ללא שינוי מאז';
         o.lo=q.l52; o.hi=q.h52;
         o.v=verdict(o.M);
         if(o.lo!=null&&o.hi!=null){
@@ -1156,6 +1205,13 @@ async function renderPortfolio(){
           ['כמות ומחיר קנייה','קובץ האחזקות של בנק דיסקונט'+(PORT.fileDateTxt?', מתאריך '+PORT.fileDateTxt:'')]
         ];
         details+=`<br><b>מחיר שוק:</b> ${esc(srcTime(q))} (${esc(q.ex||'')}).`;
+      }else if(r.last!=null){
+        /* No live price, so show the bank's own last price and say when it is from.
+           A real number with a date is far better for him than "unavailable". */
+        o.priceNow=r.last; o.cur=(res.market==='US')?'USD':'ILS';
+        o.priceAsOf='נכון ל־'+(PORT.fileDateTxt||'תאריך הקובץ')+', ללא שינוי מאז';
+        o.reason='המחיר המוצג הוא השער האחרון מהקובץ של הבנק. לא הצלחנו להביא מחיר עדכני יותר כרגע.';
+        o.sources=[['כמות, שווי ומחיר אחרון','קובץ האחזקות של בנק דיסקונט'+(PORT.fileDateTxt?', מתאריך '+PORT.fileDateTxt:'')]];
       }else{
         o.reason='לא הצלחנו למצוא מחיר עדכני לנייר הזה כרגע.';
         o.sources=[['כמות ושווי','קובץ האחזקות של בנק דיסקונט'+(PORT.fileDateTxt?', מתאריך '+PORT.fileDateTxt:'')]];
@@ -1166,6 +1222,7 @@ async function renderPortfolio(){
         ? 'זו כנראה קרן נאמנות. קרנות לא נסחרות כמו מניה, ולכן אין להן שער גבוה ונמוך יומי.'
         : 'ניתוח מחירים לא זמין לנייר הזה. אגרות חוב וקרנות לא נסחרות כמו מניות.';
       details+=`<br>הנתונים המוצגים הם של הבנק בלבד, ללא מחיר שוק חי.`;
+      if(r.last!=null){ o.priceNow=r.last; o.cur='ILS'; o.priceAsOf='נכון ל־'+(PORT.fileDateTxt||'תאריך הקובץ')+', ללא שינוי מאז'; }
       o.sources=[['כמות, שווי ומחיר אחרון','קובץ האחזקות של בנק דיסקונט'+(PORT.fileDateTxt?', מתאריך '+PORT.fileDateTxt:'')]];
     }
     o.details=details;
@@ -1659,7 +1716,7 @@ document.getElementById('go').onclick=()=>{
 async function checkStock(id,nm){
   const R=document.getElementById('result');
   R.innerHTML=`<div class="center" style="padding:20px"><span class="spin"></span> בודק…</div>`;
-  const q=await quote(id);
+  const q=await quote(id,true);
   if(!q){
     R.innerHTML = PRICES_BLOCKED
       ? pricesUnavailableHTML()
@@ -1674,7 +1731,7 @@ async function checkStock(id,nm){
   o.details=`<b>הכלל:</b> הרצפה והתקרה הן המחיר הנמוך והגבוה ביותר ב־52 השבועות האחרונים.`;
   o.companyName = isUS ? (USNAMES[id.replace('s/','').toUpperCase()]||nm) : nm;
   o.newsName=o.companyName; o.newsHe=!isUS;
-  const hh=await history(id,'5Y'); o.risk=riskLevel(hh); o.anaId=id;
+  const hh=await history(id,'5Y',true); o.risk=riskLevel(hh); o.anaId=id;
   o.M=analyze(hh,q); o.v=verdict(o.M);
   if(isUS) o.sp500=SP500.has(id.replace('s/','').toUpperCase());
   R.innerHTML=cardHTML(o);
