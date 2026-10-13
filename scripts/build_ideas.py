@@ -151,6 +151,11 @@ def publish(prices, measures):
     prices = {k: {f: v[f] for f in keep if f in v} for k, v in prices.items()}
     json.dump({"generated_at": now, "data": prices},
               open("data/prices.json", "w"), ensure_ascii=False, separators=(",", ":"))
+    # round: raw floats carry a dozen meaningless decimals and inflate the file
+    # his browser has to download before it can show him anything
+    def r(v):
+        return round(v, 3) if isinstance(v, float) else v
+    measures = {k: {f: r(v) for f, v in m.items()} for k, m in measures.items()}
     json.dump({"generated_at": now, "data": measures},
               open("data/measures.json", "w"), ensure_ascii=False, separators=(",", ":"))
     print("published %d prices and %d measure sets" % (len(prices), len(measures)), flush=True)
