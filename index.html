@@ -1660,7 +1660,12 @@ async function checkStock(id,nm){
   const R=document.getElementById('result');
   R.innerHTML=`<div class="center" style="padding:20px"><span class="spin"></span> בודק…</div>`;
   const q=await quote(id);
-  if(!q){R.innerHTML=`<div class="card"><div class="note">לא הצלחנו למצוא מחיר עדכני לנייר הזה.</div></div>`;return;}
+  if(!q){
+    R.innerHTML = PRICES_BLOCKED
+      ? pricesUnavailableHTML()
+      : `<div class="card"><div class="note">לא הצלחנו למצוא מחיר עדכני לנייר הזה.</div></div>`;
+    return;
+  }
   const isUS=id.startsWith('s/');
   const o={name:nm,sub:(isUS?'נאסד"ק':'תל אביב')+' · '+(q.ex||''),priceNow:q.p,cur:isUS?'USD':'ILS',
     lo:q.l52,hi:q.h52};

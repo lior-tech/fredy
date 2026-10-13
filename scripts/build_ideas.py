@@ -96,15 +96,35 @@ def buy_score(M):
         return {"score": b, "of": 5, "reasons": reasons}
     return None
 
+def publish(prices, measures):
+    """Write price and measure files next to the page.
+
+    The browser can always read these: they are served from the same origin as
+    the page, so the provider's block on cross-origin calls does not apply.
+    """
+    now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    json.dump({"generated_at": now, "data": prices},
+              open("data/prices.json", "w"), ensure_ascii=False, separators=(",", ":"))
+    json.dump({"generated_at": now, "data": measures},
+              open("data/measures.json", "w"), ensure_ascii=False, separators=(",", ":"))
+    print("published %d prices and %d measure sets" % (len(prices), len(measures)), flush=True)
+
+
 def main():
     uni = json.load(open("data/universe.json"))
     sp500 = set(x.upper() for x in uni.get("sp500", []))
-    ids = ["a/TLV-" + x for x in uni["tase"]] + ["s/" + x.lower() for x in uni["us"]]
+    tase_all = uni.get("tase_all") or uni["tase"]
+    ids = ["a/TLV-" + x for x in tase_all] + ["s/" + x.lower() for x in uni["us"]]
     print("scanning %d symbols" % len(ids), flush=True)
 
+    prices = {}
+    measures = {}
+    t_start = time.time()
     stage1 = []
     for i, sid in enumerate(ids):
         q = quote(sid)
+        if q:
+            prices[sid] = q
         if q and q.get("p") and q.get("l52") and q.get("h52") and q["h52"] > q["l52"]:
             pos = (q["p"] - q["l52"]) / (q["h52"] - q["l52"]) * 100
             turn = q["p"] * (q.get("v") or 0) * (0.01 if sid.startswith("a/") else 1)
@@ -114,13 +134,32 @@ def main():
         if (i + 1) % 50 == 0:
             print("  %d/%d, %d candidates" % (i + 1, len(ids), len(stage1)), flush=True)
 
-    print("stage 1 done: %d candidates" % len(stage1), flush=True)
+    print("stage 1 done: %d candidates, %d prices" % (len(stage1), len(prices)), flush=True)
+
+    # Measures for the whole market, ordered by turnover so the names he is most
+    # likely to hold are covered first, within a time budget.
+    by_liquidity = sorted(
+        prices.items(),
+        key=lambda kv: -((kv[1].get("p") or 0) * (kv[1].get("v") or 0) * (0.01 if kv[0].startswith("a/") else 1)))
+    for sid, q in by_liquidity:
+        if time.time() - t_start > 2100:          # 35 minutes, leaves room to commit
+            print("measure budget reached at %d symbols" % len(measures), flush=True)
+            break
+        rows = history(sid)
+        time.sleep(0.45)
+        M = analyze(rows, q)
+        if M:
+            measures[sid] = M
+    publish(prices, measures)
+
     stage1.sort(key=lambda x: -(x[1].get("cp") or 0))
     picks = []
     for sid, q, pos in stage1[:70]:
-        rows = history(sid)
-        time.sleep(0.5)
-        M = analyze(rows, q)
+        M = measures.get(sid)
+        if M is None:
+            rows = history(sid)
+            time.sleep(0.5)
+            M = analyze(rows, q)
         v = buy_score(M)
         if not v:
             continue
