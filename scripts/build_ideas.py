@@ -156,8 +156,12 @@ def publish(prices, measures):
     def r(v):
         return round(v, 3) if isinstance(v, float) else v
     measures = {k: {f: r(v) for f, v in m.items()} for k, m in measures.items()}
-    json.dump({"generated_at": now, "data": measures},
-              open("data/measures.json", "w"), ensure_ascii=False, separators=(",", ":"))
+    if measures:
+        json.dump({"generated_at": now, "data": measures},
+                  open("data/measures.json", "w"), ensure_ascii=False, separators=(",", ":"))
+    else:
+        print("no measures this run: keeping the existing file rather than "
+              "publishing an empty one", flush=True)
     print("published %d prices and %d measure sets" % (len(prices), len(measures)), flush=True)
 
 
@@ -204,6 +208,7 @@ def main():
 
     # Measures for the whole market, ordered by turnover so the names he is most
     # likely to hold are covered first, within a time budget.
+    t_measures = time.time()      # the budget below covers the measures only
     by_liquidity = sorted(
         prices.items(),
         key=lambda kv: -((kv[1].get("p") or 0) * (kv[1].get("v") or 0) * (0.01 if kv[0].startswith("a/") else 1)))
@@ -212,7 +217,7 @@ def main():
             continue
         if len(measures) % 60 == 0 and measures:
             publish(prices, measures)
-        if time.time() - t_start > 1500:          # 35 minutes, leaves room to commit
+        if time.time() - t_measures > 3600:       # an hour for the measures themselves
             print("measure budget reached at %d symbols" % len(measures), flush=True)
             break
         rows = history(sid)
