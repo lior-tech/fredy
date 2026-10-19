@@ -536,7 +536,7 @@ async function viaRelayJSON(url){
   }catch(e){}
   return null;
 }
-const PUB={prices:null,measures:null,at:0};
+const PUB={prices:null,measures:null,at:0,ageH:0};
 async function loadPublished(){
   for(const [k,f] of [['prices','data/prices.json'],['measures','data/measures.json']]){
     try{
@@ -544,7 +544,10 @@ async function loadPublished(){
       if(!r.ok) continue;
       const j=await r.json();
       const age=(Date.now()-Date.parse(j.generated_at||0))/36e5;
-      if(j && j.data && age<40){ PUB[k]=j.data; PUB.at=Date.parse(j.generated_at); }
+      /* Never discard it for being old. Thrown-away data is how he ended up
+         staring at the "blocked" message again five days later. Keep it, and
+         stamp every figure with the date it came from. */
+      if(j && j.data){ PUB[k]=j.data; PUB.at=Date.parse(j.generated_at); PUB.ageH=age; }
     }catch(e){}
   }
 }
@@ -554,6 +557,12 @@ async function loadPublished(){
 function measuresFor(id,q,rows){
   if(PUB.measures && PUB.measures[id]) return PUB.measures[id];
   return analyze(rows,q);
+}
+function staleNoticeHTML(){
+  if(!PUB.at || PUB.ageH<30) return '';
+  const d=dLong.format(new Date(PUB.at));
+  return bannerHTML('b-warn','המחירים המוצגים הם מיום <b>'+esc(d)+'</b> ולא השתנו מאז. '
+    +'שווי התיק והרווח שלך מחושבים לפי הקובץ של הבנק ונכונים.');
 }
 function pricesUnavailableHTML(){
   return bannerHTML('b-warn',
@@ -1212,6 +1221,8 @@ async function renderPortfolio(){
         o.risk=pre?riskFromMeasures(pre):riskLevel(hh);
         o.M=measuresFor(res.id,q,hh);
         o.priceNow=q.p; o.cur=(res.market==='US')?'USD':'ILS';
+        if(PUB.prices && PUB.prices[res.id] && PUB.ageH>30)
+          o.priceAsOf='נכון ל־'+dLong.format(new Date(PUB.at))+', ללא שינוי מאז';
         if(q._stale) o.priceAsOf='נכון ל־'+dLong.format(new Date(q._asOf||Date.now()))+', ללא שינוי מאז';
         o.lo=q.l52; o.hi=q.h52;
         o.v=verdict(o.M);
@@ -1254,7 +1265,7 @@ async function renderPortfolio(){
   }
   cards.sort((a,b)=>a.rank-b.rank);
   const gotPrices = cards.some(c=>c.o.priceNow!=null && !c.o.priceAsOf);
-  H.innerHTML=((PRICES_BLOCKED && !gotPrices) ? pricesUnavailableHTML()
+  H.innerHTML=staleNoticeHTML()+((PRICES_BLOCKED && !gotPrices) ? pricesUnavailableHTML()
       : RATE_LIMITED
       ? bannerHTML('b-warn','אתר המחירים חוסם אותנו זמנית מרוב בקשות, ולכן חלק מהניתוחים לא מוצגים. <b>הנתונים מהבנק למטה נכונים ומלאים.</b> נסה שוב בעוד כשעה.')
       : '')
@@ -1511,7 +1522,7 @@ async function renderIdeas(mode){
   try{
     const pre=await (await fetch('data/ideas.json',{cache:'no-store'})).json();
     const age=(Date.now()-Date.parse(pre.generated_at||0))/36e5;
-    if(pre && Array.isArray(pre.ideas) && age<40){
+    if(pre && Array.isArray(pre.ideas) && pre.ideas.length){
       const html=renderPrescan(pre);
       E.innerHTML=html; await cacheSet('ideas:'+dayKey(),html); return;
     }
