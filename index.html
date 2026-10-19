@@ -1808,7 +1808,7 @@ document.addEventListener('toggle',e=>{
 /* Fredy opens this as an installed app and will never think to clear a cache.
    So the page checks for a newer version itself and reloads once if it finds one.
    Guarded by sessionStorage so it can never loop. */
-const BUILD='20261019145134';
+const BUILD='20261019152243';
 (async function selfUpdate(){
   try{
     const r=await fetch('data/version.json',{cache:'no-store'});
